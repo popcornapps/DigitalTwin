@@ -17,7 +17,7 @@ function Sidebar() {
     { name: 'Batch Explorer', path: '/batch-explorer', icon: <Database size={20} /> },
     { name: 'Process Monitoring', path: '/process-monitoring', icon: <TrendingUp size={20} /> },
     { name: 'Golden Batch', path: '/golden-batch', icon: <FileText size={20} /> },
-    { name: 'Anomaly Intel', path: '/anomaly-intelligence', icon: <AlertTriangle size={20} /> },
+    { name: 'Anomaly Intelligence', path: '/anomaly-intelligence', icon: <AlertTriangle size={20} /> },
     { name: 'Quality Workbench', path: '/quality-workbench', icon: <Activity size={20} /> },
     { name: 'AI Copilot', path: '/ai-copilot', icon: <BrainCircuit size={20} /> },
   ];
@@ -31,13 +31,12 @@ function Sidebar() {
       <ul className="flex-1 py-4 space-y-1">
         {navItems.map((item) => (
           <li key={item.path}>
-            <Link 
-              to={item.path} 
-              className={`flex items-center gap-3 px-6 py-2.5 text-sm font-medium transition-colors ${
-                isActive(item.path) 
-                  ? 'text-blue-600 bg-blue-50 border-r-4 border-blue-600' 
+            <Link
+              to={item.path}
+              className={`flex items-center gap-3 px-6 py-2.5 text-sm font-medium transition-colors ${isActive(item.path)
+                  ? 'text-blue-600 bg-blue-50 border-r-4 border-blue-600'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-r-4 border-transparent'
-              }`}
+                }`}
             >
               {item.icon}
               {item.name}
@@ -54,22 +53,46 @@ function Sidebar() {
   );
 }
 
+import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterContext';
+
 function Header() {
+  const location = useLocation();
+  const {
+    selectedPlant, setSelectedPlant,
+    selectedProduct, setSelectedProduct,
+    selectedBatch, setSelectedBatch,
+    availableBatches
+  } = useFilter();
+
+  const isDashboard = location.pathname === '/' || location.pathname === '/dashboard';
+  const showBatchFilter = !isDashboard && location.pathname !== '/batch-explorer' && location.pathname !== '/golden-batch';
+
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
       <div className="flex gap-4">
-        <select className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option>Hyderabad Plant</option>
+        <select
+          value={selectedPlant}
+          onChange={(e) => setSelectedPlant(e.target.value)}
+          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {PLANTS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option>Line 03</option>
+        <select
+          value={selectedProduct}
+          onChange={(e) => setSelectedProduct(e.target.value)}
+          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option>Paracetamol 500mg</option>
-        </select>
-        <select className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
-          <option>BT-2026-018</option>
-        </select>
+        {showBatchFilter && availableBatches.length > 0 && (
+          <select
+            value={selectedBatch}
+            onChange={(e) => setSelectedBatch(e.target.value)}
+            className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+          >
+            {availableBatches.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        )}
       </div>
       <div className="flex items-center gap-6">
         <div className="flex items-center bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
@@ -91,30 +114,30 @@ function Header() {
   );
 }
 
-
-
 function App() {
   return (
     <BrowserRouter>
-      <div className="flex h-screen w-full bg-gray-50 font-sans overflow-hidden">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <Header />
-          <main className="flex-1 overflow-y-auto p-6">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/batch-explorer" element={<BatchExplorer />} />
-              <Route path="/process-monitoring" element={<ProcessMonitoring />} />
-              <Route path="/golden-batch" element={<GoldenBatch />} />
-              <Route path="/anomaly-intelligence" element={<AnomalyIntelligence />} />
-              <Route path="/quality-workbench" element={<QualityWorkbench />} />
-              <Route path="/ai-copilot" element={<AiCopilot />} />
-              <Route path="*" element={<div className="max-w-7xl mx-auto"><h2 className="text-xl text-gray-500 text-center mt-20">Page is under construction.</h2></div>} />
-            </Routes>
-          </main>
+      <FilterProvider>
+        <div className="flex h-screen w-full bg-gray-50 font-sans overflow-hidden">
+          <Sidebar />
+          <div className="flex-1 flex flex-col min-w-0">
+            <Header />
+            <main className="flex-1 overflow-y-auto p-6">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/batch-explorer" element={<BatchExplorer />} />
+                <Route path="/process-monitoring" element={<ProcessMonitoring />} />
+                <Route path="/golden-batch" element={<GoldenBatch />} />
+                <Route path="/anomaly-intelligence" element={<AnomalyIntelligence />} />
+                <Route path="/quality-workbench" element={<QualityWorkbench />} />
+                <Route path="/ai-copilot" element={<AiCopilot />} />
+                <Route path="*" element={<div className="max-w-7xl mx-auto"><h2 className="text-xl text-gray-500 text-center mt-20">Page is under construction.</h2></div>} />
+              </Routes>
+            </main>
+          </div>
         </div>
-      </div>
+      </FilterProvider>
     </BrowserRouter>
   );
 }

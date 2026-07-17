@@ -1,9 +1,13 @@
-import { mockAiChat } from '../lib/mockData';
+import { getMockAiChat } from '../lib/mockData';
 import { Send, Bot, User, Cpu } from 'lucide-react';
 import { useState } from 'react';
+import { useFilter } from '../context/FilterContext';
 
 export default function AiCopilot() {
   const [inputVal, setInputVal] = useState('');
+  const { selectedBatch } = useFilter();
+
+  const mockAiChat = getMockAiChat(selectedBatch);
 
   return (
     <div className="max-w-5xl mx-auto h-[calc(100vh-8rem)] flex flex-col pt-2">
@@ -16,7 +20,7 @@ export default function AiCopilot() {
 
       <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="text-center text-xs font-medium text-gray-400 mb-6">Chat history relative to Batch BT-2026-018</div>
+            <div className="text-center text-xs font-medium text-gray-400 mb-6">Chat history relative to Batch {selectedBatch}</div>
             {mockAiChat.map((chat, idx) => (
                <div key={idx} className={`flex gap-4 ${chat.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {chat.sender === 'ai' && (
