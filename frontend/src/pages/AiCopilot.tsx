@@ -5,9 +5,9 @@ import { useFilter } from '../context/FilterContext';
 
 export default function AiCopilot() {
   const [inputVal, setInputVal] = useState('');
-  const { selectedBatch } = useFilter();
+  const { selectedBatch, selectedPersona } = useFilter();
 
-  const mockAiChat = getMockAiChat(selectedBatch);
+  const mockAiChat = getMockAiChat(selectedBatch, selectedPersona);
 
   return (
     <div className="max-w-5xl mx-auto h-[calc(100vh-8rem)] flex flex-col pt-2">

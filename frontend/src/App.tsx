@@ -1,5 +1,6 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Search, Bell, User, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, TrendingUp, AlertTriangle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, TrendingUp, AlertTriangle } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import BatchExplorer from './pages/BatchExplorer';
 import ProcessMonitoring from './pages/ProcessMonitoring';
@@ -7,9 +8,26 @@ import GoldenBatch from './pages/GoldenBatch';
 import AnomalyIntelligence from './pages/AnomalyIntelligence';
 import QualityWorkbench from './pages/QualityWorkbench';
 import AiCopilot from './pages/AiCopilot';
+import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterContext';
+
+export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages: string[] }> = {
+  'Plant Manager': {
+    landingPage: '/dashboard',
+    visiblePages: ['/dashboard', '/batch-explorer', '/golden-batch', '/ai-copilot', '/settings']
+  },
+  'Plant Operator': {
+    landingPage: '/process-monitoring',
+    visiblePages: ['/process-monitoring', '/batch-explorer', '/ai-copilot', '/settings']
+  },
+  'Quality Engineer': {
+    landingPage: '/anomaly-intelligence',
+    visiblePages: ['/anomaly-intelligence', '/quality-workbench', '/batch-explorer', '/ai-copilot', '/settings']
+  }
+};
 
 function Sidebar() {
   const location = useLocation();
+  const { selectedPersona } = useFilter();
   const isActive = (path: string) => location.pathname === path || (path === '/dashboard' && location.pathname === '/');
 
   const navItems = [
@@ -22,14 +40,19 @@ function Sidebar() {
     { name: 'AI Copilot', path: '/ai-copilot', icon: <BrainCircuit size={20} /> },
   ];
 
+  const allowedPages = PERSONA_CONFIGS[selectedPersona]?.visiblePages || [];
+  const filteredNavItems = navItems.filter(item => allowedPages.includes(item.path));
+
+  const showSettings = allowedPages.includes('/settings');
+
   return (
-    <nav className="w-64 bg-white border-r border-gray-200 flex flex-col">
+    <nav className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
       <div className="h-16 flex items-center px-6 border-b border-gray-200">
         <Activity className="text-blue-600 mr-3" size={24} />
         <h2 className="text-lg font-bold text-gray-900 tracking-tight">PharmaTwin</h2>
       </div>
       <ul className="flex-1 py-4 space-y-1">
-        {navItems.map((item) => (
+        {filteredNavItems.map((item) => (
           <li key={item.path}>
             <Link
               to={item.path}
@@ -44,16 +67,16 @@ function Sidebar() {
           </li>
         ))}
       </ul>
-      <div className="p-4 border-t border-gray-200">
-        <Link to="/settings" className="flex items-center gap-3 px-2 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">
-          <Settings size={20} /> Settings
-        </Link>
-      </div>
+      {showSettings && (
+        <div className="p-4 border-t border-gray-200">
+          <Link to="/settings" className={`flex items-center gap-3 px-2 py-2 text-sm font-medium transition-colors ${location.pathname === '/settings' ? 'text-blue-600 font-bold' : 'text-gray-600 hover:text-gray-900'}`}>
+            <Settings size={20} /> Settings
+          </Link>
+        </div>
+      )}
     </nav>
   );
 }
-
-import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterContext';
 
 function Header() {
   const location = useLocation();
@@ -61,26 +84,29 @@ function Header() {
     selectedPlant, setSelectedPlant,
     selectedProduct, setSelectedProduct,
     selectedBatch, setSelectedBatch,
-    availableBatches
+    availableBatches,
+    selectedPersona, setSelectedPersona
   } = useFilter();
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isDashboard = location.pathname === '/' || location.pathname === '/dashboard';
   const showBatchFilter = !isDashboard && location.pathname !== '/batch-explorer' && location.pathname !== '/golden-batch';
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 select-none">
       <div className="flex gap-4">
         <select
           value={selectedPlant}
           onChange={(e) => setSelectedPlant(e.target.value)}
-          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
         >
           {PLANTS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <select
           value={selectedProduct}
           onChange={(e) => setSelectedProduct(e.target.value)}
-          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
         >
           {PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
@@ -88,7 +114,7 @@ function Header() {
           <select
             value={selectedBatch}
             onChange={(e) => setSelectedBatch(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+            className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium cursor-pointer"
           >
             {availableBatches.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
@@ -103,14 +129,124 @@ function Header() {
           <Bell size={20} />
           <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
         </button>
-        <div className="flex items-center gap-2 cursor-pointer">
-          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700">
-            <User size={16} />
-          </div>
-          <span className="text-sm font-medium text-gray-700">J. Doe</span>
+        
+        <div className="relative">
+          <button
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            className="flex items-center gap-2 hover:bg-gray-50 p-1.5 rounded-lg border border-transparent hover:border-gray-200 transition-all focus:outline-none shadow-sm"
+          >
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shadow-inner">
+              JD
+            </div>
+            <div className="text-left hidden md:block select-none">
+              <div className="text-xs font-bold text-gray-800 leading-tight">J. Doe</div>
+              <div className="text-[10px] font-semibold text-blue-600 mt-0.5 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                {selectedPersona}
+              </div>
+            </div>
+            <svg
+              className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-250 ml-0.5 ${dropdownOpen ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {dropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
+              <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2 animate-fade-in-dropdown select-none">
+                <div className="px-4 py-2 border-b border-gray-100 mb-1.5">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Active Profile</span>
+                  <span className="text-sm font-extrabold text-gray-800 block mt-0.5">J. Doe</span>
+                  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold mt-1.5">
+                    {selectedPersona}
+                  </span>
+                </div>
+                <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Switch Persona
+                </div>
+                <ul className="space-y-0.5 mt-1">
+                  {['Plant Manager', 'Plant Operator', 'Quality Engineer'].map((role) => (
+                    <li key={role}>
+                      <button
+                        onClick={() => {
+                          setSelectedPersona(role);
+                          setDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm font-semibold flex items-center justify-between transition-colors border-l-4 ${
+                          selectedPersona === role
+                            ? 'text-blue-600 bg-blue-50/70 border-blue-600 pl-3'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 border-transparent'
+                        }`}
+                      >
+                        <span>{role}</span>
+                        {selectedPersona === role && (
+                          <svg className="h-3 w-3 text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </header>
+  );
+}
+
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { selectedPersona } = useFilter();
+
+  useEffect(() => {
+    const config = PERSONA_CONFIGS[selectedPersona];
+    if (!config) return;
+
+    const currentPath = location.pathname;
+
+    if (currentPath === '/' || currentPath === '/dashboard') {
+      if (selectedPersona !== 'Plant Manager') {
+        navigate(config.landingPage, { replace: true });
+      }
+    } else {
+      const isAllowed = config.visiblePages.includes(currentPath);
+      if (!isAllowed) {
+        navigate(config.landingPage, { replace: true });
+      }
+    }
+  }, [selectedPersona, location.pathname, navigate]);
+
+  return (
+    <div className="flex h-screen w-full bg-gray-50 font-sans overflow-hidden">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header />
+        <main className="flex-1 overflow-y-auto p-6">
+          <div key={selectedPersona} className="animate-fade-in-content h-full">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/batch-explorer" element={<BatchExplorer />} />
+              <Route path="/process-monitoring" element={<ProcessMonitoring />} />
+              <Route path="/golden-batch" element={<GoldenBatch />} />
+              <Route path="/anomaly-intelligence" element={<AnomalyIntelligence />} />
+              <Route path="/quality-workbench" element={<QualityWorkbench />} />
+              <Route path="/ai-copilot" element={<AiCopilot />} />
+              <Route path="*" element={<div className="max-w-7xl mx-auto"><h2 className="text-xl text-gray-500 text-center mt-20">Page is under construction.</h2></div>} />
+            </Routes>
+          </div>
+        </main>
+      </div>
+    </div>
   );
 }
 
@@ -118,25 +254,7 @@ function App() {
   return (
     <BrowserRouter>
       <FilterProvider>
-        <div className="flex h-screen w-full bg-gray-50 font-sans overflow-hidden">
-          <Sidebar />
-          <div className="flex-1 flex flex-col min-w-0">
-            <Header />
-            <main className="flex-1 overflow-y-auto p-6">
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/batch-explorer" element={<BatchExplorer />} />
-                <Route path="/process-monitoring" element={<ProcessMonitoring />} />
-                <Route path="/golden-batch" element={<GoldenBatch />} />
-                <Route path="/anomaly-intelligence" element={<AnomalyIntelligence />} />
-                <Route path="/quality-workbench" element={<QualityWorkbench />} />
-                <Route path="/ai-copilot" element={<AiCopilot />} />
-                <Route path="*" element={<div className="max-w-7xl mx-auto"><h2 className="text-xl text-gray-500 text-center mt-20">Page is under construction.</h2></div>} />
-              </Routes>
-            </main>
-          </div>
-        </div>
+        <AppContent />
       </FilterProvider>
     </BrowserRouter>
   );

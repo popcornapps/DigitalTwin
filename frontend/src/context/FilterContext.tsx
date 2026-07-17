@@ -12,6 +12,8 @@ interface FilterContextType {
   selectedBatch: string;
   setSelectedBatch: (val: string) => void;
   availableBatches: string[];
+  selectedPersona: string;
+  setSelectedPersona: (val: string) => void;
 }
 
 const FilterContext = createContext<FilterContextType | undefined>(undefined);
@@ -19,6 +21,7 @@ const FilterContext = createContext<FilterContextType | undefined>(undefined);
 export function FilterProvider({ children }: { children: React.ReactNode }) {
   const [selectedPlant, setSelectedPlant] = useState(PLANTS[0]);
   const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0]);
+  const [selectedPersona, setSelectedPersona] = useState('Plant Manager');
 
   // Generate dummy batches based on plant and product strings to ensure they are unique
   const generateBatches = (plant: string, product: string) => {
@@ -37,8 +40,12 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   const [selectedBatch, setSelectedBatch] = useState(availableBatches[0]);
 
   // When plant changes, reset product
+  const prevPlant = React.useRef(selectedPlant);
   useEffect(() => {
-    setSelectedProduct(PRODUCTS[0]);
+    if (prevPlant.current !== selectedPlant) {
+      setSelectedProduct(PRODUCTS[0]);
+      prevPlant.current = selectedPlant;
+    }
   }, [selectedPlant]);
 
   // When product or plant changes, update available batches and reset selected batch
@@ -56,7 +63,8 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
         selectedPlant, setSelectedPlant,
         selectedProduct, setSelectedProduct,
         selectedBatch, setSelectedBatch,
-        availableBatches
+        availableBatches,
+        selectedPersona, setSelectedPersona
       }}
     >
       {children}
