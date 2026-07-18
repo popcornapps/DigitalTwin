@@ -182,3 +182,104 @@ export const getMockAiChat = (batch: string, persona: string = 'Plant Manager') 
   ];
 };
 
+export type RecommendationStatus = 'New' | 'Pending' | 'Acknowledged' | 'Rejected';
+export type RecommendationPriority = 'Critical' | 'Medium' | 'Low';
+
+export interface AIRecommendation {
+  id: string;
+  source: string;
+  batchId: string;
+  timestamp: string;
+  priority: RecommendationPriority;
+  status: RecommendationStatus;
+  title: string;
+  description: string;
+  reasoning: string;
+  expectedBenefit: string;
+  suggestedAction: string;
+  plant: string;
+  product: string;
+}
+
+export const getMockRecommendations = (plant: string, product: string, persona: string = 'Plant Manager'): AIRecommendation[] => {
+  const plCode = plant.substring(0, 3).toUpperCase();
+  const pCode = product.substring(0, 3).toUpperCase();
+  const b1 = `${plCode}-${pCode}-018`;
+  const b2 = `${plCode}-${pCode}-017`;
+
+  if (persona === 'Quality Engineer') {
+    return [
+      {
+        id: 'REC-9042', source: 'Quality Workbench', batchId: b1, timestamp: '10:15 AM', priority: 'Critical', status: 'New',
+        title: 'Review Moisture Variance before Release',
+        description: 'Moisture content is approaching the upper acceptable boundary of 2.0% (Current: 2.3%).',
+        reasoning: 'AI models detected a correlation between a sticking dry-bleed damper (Anomaly #ANM-230) and the slightly elevated moisture reading.',
+        expectedBenefit: 'Prevents out-of-spec granule release from progressing to tablet compression.',
+        suggestedAction: 'Require secondary laboratory dry-weight verification before granting release approval.',
+        plant, product
+      },
+      {
+        id: 'REC-9031', source: 'Anomaly Intelligence', batchId: b2, timestamp: 'Yesterday', priority: 'Low', status: 'Acknowledged',
+        title: 'Golden Profile Alignment Approved',
+        description: 'Batch matched 99.4% of Critical Quality Attributes.',
+        reasoning: 'Extensive multi-variate analysis confirms all dissolution and particle size profiles match the Golden Reference.',
+        expectedBenefit: 'Automates batch release processing.',
+        suggestedAction: 'Proceed with formal QA sign-off.',
+        plant, product
+      }
+    ];
+  }
+
+  if (persona === 'Plant Operator') {
+    return [
+      {
+        id: 'REC-8201', source: 'Live Process Monitoring', batchId: b1, timestamp: '15 mins ago', priority: 'Medium', status: 'New',
+        title: 'Optimize Agitator Speed',
+        description: 'Agitator is locked at 18 RPM but the target envelope indicates 22 RPM.',
+        reasoning: 'Viscosity sensors indicate favorable flow dynamics; remaining at lower speeds will unnecessarily delay the batch by 45 minutes.',
+        expectedBenefit: 'Recovers 45 minutes of processing time without impacting quality.',
+        suggestedAction: 'Increase VFD setpoint for Granulator-03 to 22 RPM.',
+        plant, product
+      },
+      {
+        id: 'REC-8182', source: 'Live Process Monitoring', batchId: b2, timestamp: '2 hours ago', priority: 'Medium', status: 'Pending',
+        title: 'Inspect Feeder Calibration',
+        description: 'Slight powder feed rate fluctuations detected during granulation.',
+        reasoning: 'Bulk density variance at the bottom of the hopper typically necessitates a zero-reference recalibration to maintain steady feed.',
+        expectedBenefit: 'Maintains strict particle classification sizes in downstream processes.',
+        suggestedAction: 'Initiate dynamic feed hopper tare sequence.',
+        plant, product
+      }
+    ];
+  }
+
+  // Plant Manager (Executive)
+  return [
+    {
+      id: 'REC-1102', source: 'AI Copilot', batchId: b1, timestamp: '1 hour ago', priority: 'Critical', status: 'New',
+      title: 'Schedule Preventive Maintenance on Dryer-03',
+      description: 'Thermal expansion variance and sticking actuator damper impacting OEE.',
+      reasoning: 'Recurring minor anomalies tracked in the past 6 batches indicate impending actuator component failure.',
+      expectedBenefit: 'Avoids 8 hours of unplanned downtime next week and preserves 94% OEE trend.',
+      suggestedAction: 'Create highest priority work order for maintenance team to replace the pneumatic cylinder in Dryer-03 over the weekend gap.',
+      plant, product
+    },
+    {
+      id: 'REC-1090', source: 'Dashboard Insights', batchId: b2, timestamp: 'Yesterday', priority: 'Medium', status: 'Rejected',
+      title: 'Adjust Production Schedule to Cover Shortfall',
+      description: 'Suggesting a shift in production runs to match slight yield losses from last month.',
+      reasoning: 'Overall yield was 98.2%, below the 99% theoretical target. Running an extra fractional batch will close order buffers.',
+      expectedBenefit: 'Restores inventory safety threshold by 12%.',
+      suggestedAction: 'Add 1 additional batch run to Shift C schedule.',
+      plant, product
+    }
+  ];
+};
+
+export const getMockActivity = () => [
+  { time: '10 mins ago', text: 'Operator Acknowledged "Optimize Agitator Speed"' },
+  { time: '45 mins ago', text: 'AI updated Risk Profile on REC-9042 from Medium to Critical' },
+  { time: '2 hours ago', text: 'Plant Manager Rejected "Adjust Production Schedule"' },
+  { time: 'Yesterday', text: 'Quality Engineer Acknowledged "Golden Profile Alignment"' }
+];
+
