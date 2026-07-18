@@ -1,13 +1,21 @@
 import { getMockAiChat } from '../lib/mockData';
 import { Send, Bot, User, Cpu } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFilter } from '../context/FilterContext';
 
 export default function AiCopilot() {
   const [inputVal, setInputVal] = useState('');
-  const { selectedBatch, selectedPersona } = useFilter();
+  const { availableBatches, selectedPersona } = useFilter();
 
-  const mockAiChat = getMockAiChat(selectedBatch, selectedPersona);
+  const [localBatch, setLocalBatch] = useState(availableBatches[0]);
+
+  useEffect(() => {
+    if (!availableBatches.includes(localBatch)) {
+      setLocalBatch(availableBatches[0]);
+    }
+  }, [availableBatches, localBatch]);
+
+  const mockAiChat = getMockAiChat(localBatch, selectedPersona);
 
   return (
     <div className="max-w-5xl mx-auto h-[calc(100vh-8rem)] flex flex-col pt-2">
@@ -15,12 +23,23 @@ export default function AiCopilot() {
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
            <Cpu className="text-blue-600" /> AI Manufacturing Copilot
         </h1>
-        <p className="text-sm text-gray-500 mt-1">Natural Language to Manufacturing Insights</p>
+        <div className="flex items-center gap-2 mt-1.5">
+           <p className="text-sm text-gray-500">Natural Language to Manufacturing Insights for</p>
+           <select
+             value={localBatch}
+             onChange={(e) => setLocalBatch(e.target.value)}
+             className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+           >
+             {availableBatches.map(b => (
+               <option key={b} value={b}>{b}</option>
+             ))}
+           </select>
+        </div>
       </div>
 
       <div className="flex-1 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="text-center text-xs font-medium text-gray-400 mb-6">Chat history relative to Batch {selectedBatch}</div>
+            <div className="text-center text-xs font-medium text-gray-400 mb-6">Chat history relative to Batch {localBatch}</div>
             {mockAiChat.map((chat, idx) => (
                <div key={idx} className={`flex gap-4 ${chat.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {chat.sender === 'ai' && (

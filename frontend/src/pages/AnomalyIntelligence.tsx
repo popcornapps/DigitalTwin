@@ -31,12 +31,24 @@ interface Anomaly {
 }
 
 export default function AnomalyIntelligence() {
-  const { selectedBatch, selectedPlant, selectedProduct } = useFilter();
+  const { availableBatches, selectedPlant, selectedProduct } = useFilter();
 
-  // 1. Fetch raw mock anomalies (fallback to Hyderabad / Paracetamol run -018 if batch is 'All Batches')
-  const rawBatchCode = selectedBatch === 'All Batches' 
+  const runningBatches = availableBatches.filter(b => b.includes('018') || b.includes('Running'));
+  const [localBatch, setLocalBatch] = useState(runningBatches.length > 0 ? runningBatches[0] : availableBatches[0]);
+
+  // Sync state if active filter changes
+  useMemo(() => {
+    const running = availableBatches.filter(b => b.includes('018') || b.includes('Running'));
+    if (running.length > 0 && !running.includes(localBatch)) {
+      setLocalBatch(running[0]);
+    } else if (running.length === 0 && availableBatches.length > 0 && !availableBatches.includes(localBatch)) {
+      setLocalBatch(availableBatches[0]);
+    }
+  }, [availableBatches, localBatch]);
+
+  const rawBatchCode = localBatch === 'All Batches' 
     ? `${selectedPlant.substring(0, 3).toUpperCase()}-${selectedProduct.substring(0, 3).toUpperCase()}-018`
-    : selectedBatch;
+    : localBatch;
   
   const rawAnomalies = getMockAnomalies(rawBatchCode);
 
@@ -134,6 +146,16 @@ export default function AnomalyIntelligence() {
     };
   }, [enrichedAnomalies, activeAnomaly]);
 
+  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString());
+  
+  // Simulate live updates
+  useMemo(() => {
+    const interval = setInterval(() => {
+      setLastUpdated(new Date().toLocaleTimeString());
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -142,9 +164,22 @@ export default function AnomalyIntelligence() {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <BrainCircuit className="h-6 w-6 text-indigo-600" /> AI Anomaly Incident Investigation
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Conducting root-cause diagnostics and impact assessments for {rawBatchCode} ({selectedProduct})
-          </p>
+          <div className="flex items-center gap-2 mt-1.5">
+             <p className="text-sm text-gray-500">Conducting root-cause diagnostics and impact assessments for</p>
+             <select
+               value={localBatch}
+               onChange={(e) => setLocalBatch(e.target.value)}
+               className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+             >
+               {runningBatches.length > 0 ? (
+                 runningBatches.map(b => <option key={b} value={b}>{b}</option>)
+               ) : (
+                 <option value={localBatch}>{localBatch}</option>
+               )}
+             </select>
+             <p className="text-sm text-gray-500">({selectedProduct})</p>
+          </div>
+          <p className="text-xs text-gray-400 mt-1 flex items-center font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Last Updated: {lastUpdated}</p>
         </div>
         <div className="text-right">
           <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Facility Location</span>

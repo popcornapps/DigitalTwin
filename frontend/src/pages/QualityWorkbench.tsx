@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { CheckCircle2, AlertCircle, XCircle, Award, ShieldAlert, FileText } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { CheckCircle2, AlertCircle, XCircle, Award, ShieldAlert, FileText, Activity } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useFilter } from '../context/FilterContext';
 
@@ -11,12 +11,20 @@ interface CQA {
 }
 
 export default function QualityWorkbench() {
-  const { selectedBatch, selectedPlant, selectedProduct } = useFilter();
+  const { availableBatches, selectedPlant, selectedProduct } = useFilter();
+
+  const [localBatch, setLocalBatch] = useState(availableBatches[0]);
+
+  useEffect(() => {
+    if (!availableBatches.includes(localBatch)) {
+      setLocalBatch(availableBatches[0]);
+    }
+  }, [availableBatches, localBatch]);
 
   // 1. Resolve batch code (fallback to Hyderabad / Paracetamol run -018 if batch is 'All Batches')
-  const batchCode = selectedBatch === 'All Batches' 
+  const batchCode = localBatch === 'All Batches' 
     ? `${selectedPlant.substring(0, 3).toUpperCase()}-${selectedProduct.substring(0, 3).toUpperCase()}-018`
-    : selectedBatch;
+    : localBatch;
 
   // 2. Generate dynamic CQA metrics, risk profile, and recommendations matching simulated run states
   const qualityReport = useMemo(() => {
@@ -120,9 +128,18 @@ export default function QualityWorkbench() {
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Award className="h-6 w-6 text-teal-600" /> Quality Workbench
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            CQA release compliance and quality metrics evaluation for {batchCode}
-          </p>
+          <div className="flex items-center gap-2 mt-1.5">
+             <p className="text-sm text-gray-500">CQA release compliance and quality metrics evaluation for</p>
+             <select
+               value={localBatch}
+               onChange={(e) => setLocalBatch(e.target.value)}
+               className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+             >
+               {availableBatches.map(b => (
+                 <option key={b} value={b}>{b}</option>
+               ))}
+             </select>
+          </div>
         </div>
         <div className="text-right">
           <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wider">Facility & Product</span>
@@ -251,22 +268,3 @@ export default function QualityWorkbench() {
   );
 }
 
-// Simple fallback icon wrapper
-function Activity(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
-  );
-}

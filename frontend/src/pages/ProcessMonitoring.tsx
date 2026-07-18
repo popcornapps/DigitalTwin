@@ -1,35 +1,82 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { LineChart, Line, ReferenceArea, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { getMockTrendData, getMockParameters } from '../lib/mockData';
 import { useFilter } from '../context/FilterContext';
 import { BrainCircuit, Info } from 'lucide-react';
 
 export default function ProcessMonitoring() {
-  const { selectedBatch, selectedPlant } = useFilter();
+  const { availableBatches, selectedPlant } = useFilter();
 
-  const mockParameters = useMemo(() => getMockParameters(selectedBatch), [selectedBatch]);
-  const mockTrendData = useMemo(() => getMockTrendData(selectedBatch), [selectedBatch]);
+  const runningBatches = availableBatches.filter(b => b.includes('018') || b.includes('Running'));
+  const [localBatch, setLocalBatch] = useState(runningBatches.length > 0 ? runningBatches[0] : availableBatches[0]);
 
-  const [activeParamName, setActiveParamName] = useState(mockParameters[0]?.name || '');
+  useEffect(() => {
+    const running = availableBatches.filter(b => b.includes('018') || b.includes('Running'));
+    if (running.length > 0) setLocalBatch(running[0]);
+    else setLocalBatch(availableBatches[0]);
+  }, [availableBatches]);
+
+  const initialParameters = useMemo(() => getMockParameters(localBatch), [localBatch]);
+  const initialTrendData = useMemo(() => getMockTrendData(localBatch), [localBatch]);
+
+  const [liveParameters, setLiveParameters] = useState(initialParameters);
+  const [liveTrendData, setLiveTrendData] = useState(initialTrendData);
+  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString());
+
+  useEffect(() => {
+    setLiveParameters(initialParameters);
+    setLiveTrendData(initialTrendData);
+    setLastUpdated(new Date().toLocaleTimeString());
+
+    const interval = setInterval(() => {
+      setLiveTrendData(prev => {
+        const newData = [...prev.slice(1)];
+        const lastTimeParts = newData[newData.length - 1].time.split(':');
+        const totalMinutes = parseInt(lastTimeParts[0]) * 60 + parseInt(lastTimeParts[1]) + 1;
+        const newTime = `${Math.floor(totalMinutes / 60)}:${(totalMinutes % 60).toString().padStart(2, '0')}`;
+        
+        const newPoint: any = { time: newTime };
+        initialParameters.forEach(p => {
+          const lastPoint = prev[prev.length - 1];
+          const jitter = (Math.random() - 0.5) * p.variance * 0.3;
+          let newVal = lastPoint[p.name] + jitter;
+          newPoint[p.name] = parseFloat(newVal.toFixed(2));
+          newPoint[`golden_${p.name}`] = lastPoint[`golden_${p.name}`];
+        });
+        return [...newData, newPoint];
+      });
+
+      setLiveParameters(prev => prev.map(p => {
+        const jitter = (Math.random() - 0.5) * p.variance * 0.3;
+        let newVal = p.current + jitter;
+        return { ...p, current: parseFloat(newVal.toFixed(2)) };
+      }));
+      setLastUpdated(new Date().toLocaleTimeString());
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [initialParameters, initialTrendData]);
+
+  const [activeParamName, setActiveParamName] = useState(liveParameters[0]?.name || '');
 
   // Reset active param if the batch changes and the new batch doesn't have the old active param
   useMemo(() => {
-    if (mockParameters.length > 0 && !mockParameters.find(p => p.name === activeParamName)) {
-      setActiveParamName(mockParameters[0].name);
+    if (liveParameters.length > 0 && !liveParameters.find(p => p.name === activeParamName)) {
+      setActiveParamName(liveParameters[0].name);
     }
-  }, [mockParameters, activeParamName]);
+  }, [liveParameters, activeParamName]);
 
-  const activeParamObj = mockParameters.find(p => p.name === activeParamName) || mockParameters[0];
+  const activeParamObj = liveParameters.find(p => p.name === activeParamName) || liveParameters[0];
 
   // Calculate generic statistics
   const stats = useMemo(() => {
-    if (!activeParamObj || mockTrendData.length === 0) return { avg: 0, min: 0, max: 0, variance: 0, stdDev: 0 };
+    if (!activeParamObj || liveTrendData.length === 0) return { avg: 0, min: 0, max: 0, variance: 0, stdDev: 0 };
 
     let sum = 0;
     let min = Infinity;
     let max = -Infinity;
 
-    mockTrendData.forEach(d => {
+    liveTrendData.forEach(d => {
       const val = d[activeParamName] as number;
       if (val !== undefined) {
         sum += val;
@@ -38,11 +85,11 @@ export default function ProcessMonitoring() {
       }
     });
 
-    const count = mockTrendData.length;
+    const count = liveTrendData.length;
     const avg = sum / count;
 
     let sqSum = 0;
-    mockTrendData.forEach(d => {
+    liveTrendData.forEach(d => {
       const val = d[activeParamName] as number;
       if (val !== undefined) sqSum += Math.pow(val - avg, 2);
     });
@@ -62,7 +109,7 @@ export default function ProcessMonitoring() {
       variance: format(variance),
       stdDev: format(stdDev)
     };
-  }, [activeParamName, mockTrendData, activeParamObj]);
+  }, [activeParamName, liveTrendData, activeParamObj]);
 
   const getAiMessage = () => {
     if (!activeParamObj) return '';
@@ -83,12 +130,27 @@ export default function ProcessMonitoring() {
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Live Process Monitoring</h1>
-          <p className="text-sm text-gray-500">Real-time parameters and control charting for {selectedBatch} at {selectedPlant}</p>
+          <div className="flex items-center gap-2 mt-1">
+             <p className="text-sm text-gray-500">Real-time parameters and control charting for</p>
+             <select
+               value={localBatch}
+               onChange={(e) => setLocalBatch(e.target.value)}
+               className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+             >
+               {runningBatches.length > 0 ? (
+                 runningBatches.map(b => <option key={b} value={b}>{b}</option>)
+               ) : (
+                 <option value={localBatch}>{localBatch}</option>
+               )}
+             </select>
+             <p className="text-sm text-gray-500">at {selectedPlant}</p>
+          </div>
+          <p className="text-xs text-gray-400 mt-1 flex items-center font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span> Last Updated: {lastUpdated}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {mockParameters.map((param) => {
+        {liveParameters.map((param) => {
           const dev = param.current - param.golden;
           return (
             <div key={param.name} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 relative overflow-hidden">
@@ -120,7 +182,7 @@ export default function ProcessMonitoring() {
                   onChange={(e) => setActiveParamName(e.target.value)}
                   className="bg-gray-50 border border-gray-200 text-sm text-gray-800 rounded-md py-1.5 px-3 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                 >
-                  {mockParameters.map(p => (
+                  {liveParameters.map(p => (
                     <option key={p.name} value={p.name}>{p.name}</option>
                   ))}
                 </select>
@@ -128,7 +190,7 @@ export default function ProcessMonitoring() {
             </div>
             <div className="h-80 w-full relative">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={mockTrendData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                <LineChart data={liveTrendData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                   <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} tickMargin={10} minTickGap={20} />
                   <YAxis
