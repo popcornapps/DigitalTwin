@@ -6,7 +6,14 @@ const hash = (str: string) => {
 
 const pseudoRandom = (seed: string, min: number, max: number) => {
   const h = hash(seed);
-  return min + (h % (max - min * 100)) / 100 + (h % 100) / 100;
+  return min + ((h % 1000) / 1000) * (max - min);
+};
+
+// Unlike pseudoRandom above, this always stays within [min, max] — needed for
+// percentage-style values (OEE components) where an out-of-range result is nonsensical.
+const boundedPseudoRandom = (seed: string, min: number, max: number) => {
+  const h = hash(seed);
+  return min + ((h % 1000) / 1000) * (max - min);
 };
 
 export const getMockPlantData = (plant: string, product: string, batch: string) => ({
@@ -154,6 +161,72 @@ export const getMockQualityMetrics = (batch: string) => {
   ];
 };
 
+export type OEELossFactor = 'Availability' | 'Performance' | 'Quality';
+
+export interface OEEBreakdown {
+  availability: number;
+  performance: number;
+  quality: number;
+  oee: number;
+  primaryCause: OEELossFactor;
+  observations: string[];
+}
+
+const OEE_OBSERVATIONS: Record<OEELossFactor, string[]> = {
+  Availability: [
+    'Unplanned downtime recorded during the run.',
+    'Idle time exceeded the shift target.',
+    'Maintenance delay impacted total run time.'
+  ],
+  Performance: [
+    'Equipment operated below target speed.',
+    'Mixing cycle took longer than expected.',
+    'Throughput was below benchmark.'
+  ],
+  Quality: [
+    'Minor defects detected in sampled units.',
+    'Rework was required on a portion of the batch.',
+    'A process deviation was flagged during in-process checks.'
+  ]
+};
+
+export const getMockOEEBreakdown = (batch: string): OEEBreakdown => {
+  const availability = parseFloat(boundedPseudoRandom(batch + 'OEE_A', 88, 99).toFixed(0));
+  const performance = parseFloat(boundedPseudoRandom(batch + 'OEE_P', 78, 96).toFixed(0));
+  const quality = parseFloat(boundedPseudoRandom(batch + 'OEE_Q', 95, 99.5).toFixed(1));
+  const oee = parseFloat(((availability * performance * quality) / 10000).toFixed(1));
+
+  const factors: { key: OEELossFactor; value: number }[] = [
+    { key: 'Availability', value: availability },
+    { key: 'Performance', value: performance },
+    { key: 'Quality', value: quality }
+  ];
+  const primaryCause = factors.reduce((min, f) => (f.value < min.value ? f : min)).key;
+
+  return { availability, performance, quality, oee, primaryCause, observations: OEE_OBSERVATIONS[primaryCause] };
+};
+
+export interface BatchKPIs {
+  yield: number;
+  qualityScore: number;
+  cycleTimeHrs: number;
+  sec: number;
+  processStability: number;
+  oee: number;
+}
+
+export const getMockBatchKPIs = (batch: string): BatchKPIs => {
+  const { oee } = getMockOEEBreakdown(batch);
+  return {
+    yield: parseFloat(boundedPseudoRandom(batch + 'BY', 94, 99.5).toFixed(1)),
+    qualityScore: parseFloat(boundedPseudoRandom(batch + 'BQ', 95, 99.5).toFixed(1)),
+    cycleTimeHrs: parseFloat(boundedPseudoRandom(batch + 'BCT', 8, 16).toFixed(2)),
+    sec: parseFloat(boundedPseudoRandom(batch + 'BSEC', 0.8, 2.2).toFixed(2)),
+    processStability: parseFloat(boundedPseudoRandom(batch + 'BPS', 94, 99).toFixed(1)),
+    oee
+  };
+};
+
 export const getMockAiChat = (batch: string, persona: string = 'Plant Manager') => {
   if (persona === 'Plant Operator') {
     return [
@@ -189,7 +262,8 @@ export interface AIRecommendation {
   id: string;
   source: string;
   batchId: string;
-  timestamp: string;
+  timestamp: string;       // Display-only, human-readable ("10:15 AM", "Yesterday")
+  createdDate: string;     // ISO date string for age calculations (e.g. "2026-07-13T10:15:00Z")
   priority: RecommendationPriority;
   status: RecommendationStatus;
   title: string;
@@ -210,7 +284,7 @@ export const getMockRecommendations = (plant: string, product: string, persona: 
   if (persona === 'Quality Engineer') {
     return [
       {
-        id: 'REC-9042', source: 'Quality Workbench', batchId: b1, timestamp: '10:15 AM', priority: 'Critical', status: 'New',
+        id: 'REC-9042', source: 'Quality Workbench', batchId: b1, timestamp: '10:15 AM', createdDate: '2026-07-18T10:15:00Z', priority: 'Critical', status: 'New',
         title: 'Review Moisture Variance before Release',
         description: 'Moisture content is approaching the upper acceptable boundary of 2.0% (Current: 2.3%).',
         reasoning: 'AI models detected a correlation between a sticking dry-bleed damper (Anomaly #ANM-230) and the slightly elevated moisture reading.',
@@ -219,7 +293,16 @@ export const getMockRecommendations = (plant: string, product: string, persona: 
         plant, product
       },
       {
-        id: 'REC-9031', source: 'Anomaly Intelligence', batchId: b2, timestamp: 'Yesterday', priority: 'Low', status: 'Acknowledged',
+        id: 'REC-9035', source: 'Anomaly Intelligence', batchId: b2, timestamp: '2 weeks ago', createdDate: '2026-07-05T14:20:00Z', priority: 'Critical', status: 'Pending',
+        title: 'Investigate Particle Size Distribution Drift',
+        description: 'Particle size measurements show a gradual drift from target distribution over the last 3 batches.',
+        reasoning: 'Statistical process control charts indicate a potential systematic shift in milling parameters that could impact tablet dissolution rates.',
+        expectedBenefit: 'Prevents downstream quality failures and potential batch rejections.',
+        suggestedAction: 'Review milling equipment calibration logs and validate screen mesh integrity.',
+        plant, product
+      },
+      {
+        id: 'REC-9031', source: 'Anomaly Intelligence', batchId: b2, timestamp: 'Yesterday', createdDate: '2026-07-19T08:00:00Z', priority: 'Low', status: 'Acknowledged',
         title: 'Golden Profile Alignment Approved',
         description: 'Batch matched 99.4% of Critical Quality Attributes.',
         reasoning: 'Extensive multi-variate analysis confirms all dissolution and particle size profiles match the Golden Reference.',
@@ -233,7 +316,7 @@ export const getMockRecommendations = (plant: string, product: string, persona: 
   if (persona === 'Plant Operator') {
     return [
       {
-        id: 'REC-8201', source: 'Live Process Monitoring', batchId: b1, timestamp: '15 mins ago', priority: 'Medium', status: 'New',
+        id: 'REC-8201', source: 'Live Process Monitoring', batchId: b1, timestamp: '15 mins ago', createdDate: '2026-07-15T14:00:00Z', priority: 'Medium', status: 'New',
         title: 'Optimize Agitator Speed',
         description: 'Agitator is locked at 18 RPM but the target envelope indicates 22 RPM.',
         reasoning: 'Viscosity sensors indicate favorable flow dynamics; remaining at lower speeds will unnecessarily delay the batch by 45 minutes.',
@@ -242,7 +325,7 @@ export const getMockRecommendations = (plant: string, product: string, persona: 
         plant, product
       },
       {
-        id: 'REC-8182', source: 'Live Process Monitoring', batchId: b2, timestamp: '2 hours ago', priority: 'Medium', status: 'Pending',
+        id: 'REC-8182', source: 'Live Process Monitoring', batchId: b2, timestamp: '2 hours ago', createdDate: '2026-07-06T14:00:00Z', priority: 'Medium', status: 'Pending',
         title: 'Inspect Feeder Calibration',
         description: 'Slight powder feed rate fluctuations detected during granulation.',
         reasoning: 'Bulk density variance at the bottom of the hopper typically necessitates a zero-reference recalibration to maintain steady feed.',
@@ -256,7 +339,7 @@ export const getMockRecommendations = (plant: string, product: string, persona: 
   // Plant Manager (Executive)
   return [
     {
-      id: 'REC-1102', source: 'AI Copilot', batchId: b1, timestamp: '1 hour ago', priority: 'Critical', status: 'New',
+      id: 'REC-1102', source: 'AI Copilot', batchId: b1, timestamp: '1 hour ago', createdDate: '2026-07-11T09:00:00Z', priority: 'Critical', status: 'New',
       title: 'Schedule Preventive Maintenance on Dryer-03',
       description: 'Thermal expansion variance and sticking actuator damper impacting OEE.',
       reasoning: 'Recurring minor anomalies tracked in the past 6 batches indicate impending actuator component failure.',
@@ -265,7 +348,7 @@ export const getMockRecommendations = (plant: string, product: string, persona: 
       plant, product
     },
     {
-      id: 'REC-1090', source: 'Dashboard Insights', batchId: b2, timestamp: 'Yesterday', priority: 'Medium', status: 'Rejected',
+      id: 'REC-1090', source: 'Dashboard Insights', batchId: b2, timestamp: 'Yesterday', createdDate: '2026-07-10T16:00:00Z', priority: 'Medium', status: 'Rejected',
       title: 'Adjust Production Schedule to Cover Shortfall',
       description: 'Suggesting a shift in production runs to match slight yield losses from last month.',
       reasoning: 'Overall yield was 98.2%, below the 99% theoretical target. Running an extra fractional batch will close order buffers.',

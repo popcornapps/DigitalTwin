@@ -1,37 +1,41 @@
-import { 
-  Award, 
-  ShieldCheck, 
-  Activity, 
-  FileText, 
-  Calendar, 
-  Clock, 
-  Flame, 
-  Check 
+import {
+  Award,
+  ShieldCheck,
+  Activity,
+  FileText,
+  Calendar,
+  Clock,
+  Flame,
+  Check
 } from 'lucide-react';
+import { useState } from 'react';
 import { useFilter } from '../context/FilterContext';
+import { KPIInfoModal } from '../components/KPIInfoModal';
+import { getKPIDefinition } from '../lib/kpiDefinitions';
 
 export default function GoldenBatch() {
   const { selectedPlant, selectedProduct } = useFilter();
+  const [activeKPIId, setActiveKPIId] = useState<string | null>(null);
 
   // 1. Generate Golden Batch metadata statically based on Plant & Product
   const getGoldenProfile = (plant: string, product: string) => {
     const plCode = plant.substring(0, 3).toUpperCase();
     const pCode = product.substring(0, 3).toUpperCase();
     
-    let duration = "12 Hours 45 Minutes";
+    let duration = "12.75 hrs";
     let yieldVal = "99.2%";
     let quality = "99.5%";
     let performance = "98.9%";
     let date = "2026-06-12";
-    
+
     if (product.includes('Amoxicillin')) {
-      duration = "14 Hours 15 Minutes";
+      duration = "14.25 hrs";
       yieldVal = "98.6%";
       quality = "99.1%";
       performance = "98.2%";
       date = "2026-06-08";
     } else if (product.includes('Ibuprofen')) {
-      duration = "10 Hours 30 Minutes";
+      duration = "10.5 hrs";
       yieldVal = "99.0%";
       quality = "99.3%";
       performance = "98.7%";
@@ -261,17 +265,34 @@ export default function GoldenBatch() {
               <Activity className="h-5 w-5 text-indigo-500" /> Golden Batch Performance KPIs
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              {performanceKPIs.map((kpi, idx) => (
-                <div key={idx} className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between hover:bg-white hover:shadow-sm transition-all">
-                  <span className="text-xs font-semibold text-gray-500 tracking-wide uppercase">{kpi.label}</span>
-                  <div className="flex items-center justify-between mt-3">
-                    <div className={`p-2 rounded-lg ${kpi.color}`}>
-                      {kpi.icon}
+              {performanceKPIs.map((kpi, idx) => {
+                const kpiIdMap: Record<string, string> = {
+                  'Yield': 'yield',
+                  'Quality Score': 'qualityScore',
+                  'Cycle Time': 'cycleTime',
+                  'Energy Consumption': 'sec',
+                  'Process Stability': 'processStability',
+                  'OEE': 'oee'
+                };
+                const kpiId = kpiIdMap[kpi.label];
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setActiveKPIId(kpiId)}
+                    className="text-left bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between hover:bg-white hover:shadow-sm transition-all cursor-pointer hover:ring-2 hover:ring-indigo-100"
+                  >
+                    <span className="text-xs font-semibold text-gray-500 tracking-wide uppercase">{kpi.label}</span>
+                    <div className="flex items-center justify-between mt-3">
+                      <div className={`p-2 rounded-lg ${kpi.color}`}>
+                        {kpi.icon}
+                      </div>
+                      <span className="text-lg font-bold text-gray-955 text-gray-900">{kpi.value}</span>
                     </div>
-                    <span className="text-lg font-bold text-gray-955 text-gray-900">{kpi.value}</span>
-                  </div>
-                </div>
-              ))}
+                    <span className="text-[10px] font-semibold text-indigo-400 mt-2">Click for details</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
           
@@ -298,6 +319,25 @@ export default function GoldenBatch() {
 
         </div>
       </div>
+
+      {/* KPI Education Modal */}
+      {activeKPIId && getKPIDefinition(activeKPIId) && (
+        <KPIInfoModal
+          kpiDefinition={getKPIDefinition(activeKPIId)!}
+          currentValue={
+            performanceKPIs.find(k => {
+              const kpiIdMap: Record<string, string> = {
+                'Yield': 'yield', 'Quality Score': 'qualityScore',
+                'Cycle Time': 'cycleTime', 'Energy Consumption': 'sec',
+                'Process Stability': 'processStability'
+              };
+              return kpiIdMap[k.label] === activeKPIId;
+            })?.value
+          }
+          onClose={() => setActiveKPIId(null)}
+        />
+      )}
+
     </div>
   );
 }

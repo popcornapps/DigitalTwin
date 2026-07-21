@@ -3,8 +3,22 @@ import { useFilter } from '../context/FilterContext';
 import { getMockRecommendations, getMockActivity, AIRecommendation, RecommendationStatus } from '../lib/mockData';
 import {
   Inbox, CheckCircle2, XCircle, Clock,
-  Info, Activity, Filter, FileText, Zap
+  Info, Activity, Filter, FileText, Zap, AlertTriangle
 } from 'lucide-react';
+
+// Returns age in days from createdDate ISO string to "today" (2026-07-20)
+function getAgeDays(createdDateISO: string): number {
+  const created = new Date(createdDateISO);
+  const now = new Date('2026-07-20T00:00:00Z'); // Hardcoded "today" per CLAUDE.md
+  return Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// Returns true if rec is overdue (Critical + New/Pending + >7 days old)
+function isOverdue(rec: AIRecommendation): boolean {
+  return rec.priority === 'Critical' &&
+         (rec.status === 'New' || rec.status === 'Pending') &&
+         getAgeDays(rec.createdDate) > 7;
+}
 
 export default function ReviewDesk() {
   const { selectedPlant, selectedProduct, selectedPersona } = useFilter();
@@ -53,6 +67,15 @@ export default function ReviewDesk() {
   const kpiAck = recommendations.filter(r => r.status === 'Acknowledged').length;
   const kpiRej = recommendations.filter(r => r.status === 'Rejected').length;
 
+  // Critical Attention KPIs
+  const criticalRecs = recommendations.filter(r => r.priority === 'Critical');
+  const kpiCriticalOpen = criticalRecs.filter(r => r.status === 'New' || r.status === 'Pending').length;
+  const kpiOverdueCritical = criticalRecs.filter(r => isOverdue(r)).length;
+  const oldestCriticalPending = criticalRecs
+    .filter(r => r.status === 'Pending')
+    .sort((a, b) => new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime())[0];
+  const kpiOldestPending = oldestCriticalPending ? `${getAgeDays(oldestCriticalPending.createdDate)} Days` : 'N/A';
+
   const activeRec = recommendations.find(r => r.id === activeRecId) || null;
 
   return (
@@ -83,11 +106,16 @@ export default function ReviewDesk() {
       </div>
 
       {/* KPI Cards Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <KPICard title="New" value={kpiNew} icon={<Zap />} color="text-indigo-600" bg="bg-indigo-50" />
         <KPICard title="Pending Review" value={kpiPending} icon={<Clock />} color="text-amber-600" bg="bg-amber-50" />
         <KPICard title="Acknowledged" value={kpiAck} icon={<CheckCircle2 />} color="text-emerald-600" bg="bg-emerald-50" />
         <KPICard title="Rejected" value={kpiRej} icon={<XCircle />} color="text-rose-600" bg="bg-rose-50" />
+        <CriticalAttentionCard
+          criticalOpen={kpiCriticalOpen}
+          overdueCritical={kpiOverdueCritical}
+          oldestPending={kpiOldestPending}
+        />
       </div>
 
       {/* Local Filters */}
@@ -175,7 +203,19 @@ export default function ReviewDesk() {
                           <div className="text-[10px] text-gray-400 font-bold mt-0.5">{rec.timestamp}</div>
                         </td>
                         <td className="px-4 py-4 align-top">
-                          <div className="text-sm font-bold text-gray-800">{rec.title}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-bold text-gray-800">{rec.title}</div>
+                            {rec.priority === 'Critical' && (rec.status === 'New' || rec.status === 'Pending') && (
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200">
+                                Critical
+                              </span>
+                            )}
+                            {isOverdue(rec) && (
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">
+                                Overdue
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-gray-500 font-bold mt-1 max-w-[200px] truncate">{rec.source}</div>
                         </td>
                         <td className="px-4 py-4 align-top whitespace-nowrap">
@@ -218,7 +258,10 @@ export default function ReviewDesk() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 uppercase tracking-wider">{activeRec.source}</span>
-                  <Badge type="priority" value={activeRec.priority} />
+                  <div className="flex items-center gap-2">
+                    <Badge type="priority" value={activeRec.priority} />
+                    <Badge type="status" value={activeRec.status} />
+                  </div>
                 </div>
                 <h3 className="text-xl font-black text-gray-900 leading-tight">{activeRec.title}</h3>
                 <div className="text-sm text-gray-500 font-bold mt-1.5 flex items-center gap-2">
@@ -226,11 +269,33 @@ export default function ReviewDesk() {
                 </div>
               </div>
 
+              {/* Metadata Grid */}
+              <div className="grid grid-cols-2 gap-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Created</span>
+                  <p className="text-sm font-bold text-gray-800">{activeRec.timestamp}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Pending Duration</span>
+                  <p className="text-sm font-bold text-gray-800">
+                    {activeRec.status === 'Pending' || activeRec.status === 'New'
+                      ? `${getAgeDays(activeRec.createdDate)} Days`
+                      : 'Closed'}
+                  </p>
+                </div>
+              </div>
+
               <div>
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">AI Summary</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Description</span>
                 <div className="text-sm text-gray-700 leading-relaxed font-medium bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50">
                   <p>{activeRec.description}</p>
-                  <p className="mt-2">{activeRec.reasoning}</p>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Reasoning</span>
+                <div className="text-sm text-gray-700 leading-relaxed font-medium bg-slate-50 p-4 rounded-xl border border-gray-100">
+                  <p>{activeRec.reasoning}</p>
                 </div>
               </div>
 
@@ -240,7 +305,7 @@ export default function ReviewDesk() {
                   <p className="text-sm text-gray-900 leading-relaxed font-bold">{activeRec.suggestedAction}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Expected Outcome</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Expected Benefit</span>
                   <p className="text-sm text-emerald-700 leading-relaxed font-bold">{activeRec.expectedBenefit}</p>
                 </div>
               </div>
@@ -318,6 +383,33 @@ function KPICard({ title, value, icon, color, bg }: { title: string, value: numb
       <div>
         <p className="text-xl font-black text-gray-900 leading-none">{value}</p>
         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider leading-tight mt-1">{title}</p>
+      </div>
+    </div>
+  );
+}
+
+function CriticalAttentionCard({ criticalOpen, overdueCritical, oldestPending }: { criticalOpen: number, overdueCritical: number, oldestPending: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
+          <AlertTriangle size={18} />
+        </div>
+        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider leading-tight">Critical Attention</p>
+      </div>
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Critical Open</span>
+          <span className="text-base font-black text-rose-600">{criticalOpen}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Overdue Critical</span>
+          <span className="text-base font-black text-orange-600">{overdueCritical}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Oldest Pending</span>
+          <span className="text-base font-black text-gray-700">{oldestPending}</span>
+        </div>
       </div>
     </div>
   );

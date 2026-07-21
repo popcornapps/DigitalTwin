@@ -1,7 +1,27 @@
 import { useState, useMemo } from 'react';
-import { getMockBatchHistory } from '../lib/mockData';
-import { Search } from 'lucide-react';
+import { getMockBatchHistory, getMockBatchKPIs } from '../lib/mockData';
+import { Search, Activity, ShieldCheck, Clock, Flame, Award, XCircle } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useFilter } from '../context/FilterContext';
+import { KPIInfoModal } from '../components/KPIInfoModal';
+import { getKPIDefinition } from '../lib/kpiDefinitions';
+
+function KpiCard({ label, value, icon, color, onClick, hint }: { label: string; value: string; icon: ReactNode; color: string; onClick?: () => void; hint?: string }) {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      onClick={onClick}
+      className={`text-left bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between hover:bg-white hover:shadow-sm transition-all ${onClick ? 'cursor-pointer hover:ring-2 hover:ring-indigo-100' : ''}`}
+    >
+      <span className="text-xs font-semibold text-gray-500 tracking-wide uppercase">{label}</span>
+      <div className="flex items-center justify-between mt-3">
+        <div className={`p-2 rounded-lg ${color}`}>{icon}</div>
+        <span className="text-lg font-bold text-gray-900">{value}</span>
+      </div>
+      {hint && <span className="text-[10px] font-semibold text-indigo-400 mt-2">{hint}</span>}
+    </Tag>
+  );
+}
 
 export default function BatchExplorer() {
   const { selectedPlant, selectedProduct, setSelectedBatch } = useFilter();
@@ -11,6 +31,15 @@ export default function BatchExplorer() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [yieldSort, setYieldSort] = useState('None');
   const [qualitySort, setQualitySort] = useState('None');
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const [activeKPIId, setActiveKPIId] = useState<string | null>(null);
+
+  const activeBatchKPIs = activeBatchId ? getMockBatchKPIs(activeBatchId) : null;
+
+  const closeBatchModal = () => {
+    setActiveBatchId(null);
+    setActiveKPIId(null);
+  };
 
   const filteredAndSortedBatches = useMemo(() => {
     let result = [...mockBatchHistory];
@@ -132,7 +161,14 @@ export default function BatchExplorer() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filteredAndSortedBatches.map((batch) => (
-              <tr key={batch.id} className="hover:bg-gray-50" onClick={() => setSelectedBatch(batch.id)}>
+              <tr
+                key={batch.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => {
+                  setSelectedBatch(batch.id);
+                  setActiveBatchId(batch.id);
+                }}
+              >
                 <td className="px-6 py-4 font-medium text-blue-600 cursor-pointer">{batch.id}</td>
                 <td className="px-6 py-4">{batch.product}</td>
                 <td className="px-6 py-4">{batch.start}</td>
@@ -156,6 +192,63 @@ export default function BatchExplorer() {
           </tbody>
         </table>
       </div>
+
+      {activeBatchId && activeBatchKPIs && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-2xl flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
+              <div>
+                <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                  <Activity size={16} className="text-indigo-500" /> Batch KPIs
+                </h2>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">{activeBatchId}</p>
+              </div>
+              <button onClick={closeBatchModal} className="p-1 hover:bg-gray-200 rounded-md text-gray-500 transition-colors">
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-4">
+                <KpiCard label="Yield" value={`${activeBatchKPIs.yield}%`} icon={<Activity className="h-5 w-5 text-emerald-600" />} color="bg-emerald-50" onClick={() => setActiveKPIId('yield')} hint="Click for details" />
+                <KpiCard label="Quality Score" value={`${activeBatchKPIs.qualityScore}%`} icon={<ShieldCheck className="h-5 w-5 text-rose-600" />} color="bg-rose-50" onClick={() => setActiveKPIId('qualityScore')} hint="Click for details" />
+                <KpiCard label="Cycle Time" value={`${activeBatchKPIs.cycleTimeHrs} hrs`} icon={<Clock className="h-5 w-5 text-blue-600" />} color="bg-blue-50" onClick={() => setActiveKPIId('cycleTime')} hint="Click for details" />
+                <KpiCard label="Specific Energy Consumption (SEC)" value={`${activeBatchKPIs.sec} kWh/kg`} icon={<Flame className="h-5 w-5 text-orange-600" />} color="bg-orange-50" onClick={() => setActiveKPIId('sec')} hint="Click for details" />
+                <KpiCard label="Process Stability" value={`${activeBatchKPIs.processStability}%`} icon={<Award className="h-5 w-5 text-teal-600" />} color="bg-teal-50" onClick={() => setActiveKPIId('processStability')} hint="Click for details" />
+                <KpiCard
+                  label="OEE"
+                  value={`${activeBatchKPIs.oee}%`}
+                  icon={<Activity className="h-5 w-5 text-indigo-600" />}
+                  color="bg-indigo-50"
+                  onClick={() => setActiveKPIId('oee')}
+                  hint="Click for details"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KPI Education Modal (stacks on top of batch modal at z-[70]) */}
+      {activeKPIId && activeBatchKPIs && getKPIDefinition(activeKPIId) && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
+          <div className="pointer-events-auto">
+            <KPIInfoModal
+              kpiDefinition={getKPIDefinition(activeKPIId)!}
+              currentValue={
+                activeKPIId === 'yield' ? `${activeBatchKPIs.yield}%` :
+                activeKPIId === 'qualityScore' ? `${activeBatchKPIs.qualityScore}%` :
+                activeKPIId === 'cycleTime' ? `${activeBatchKPIs.cycleTimeHrs} hrs` :
+                activeKPIId === 'sec' ? `${activeBatchKPIs.sec} kWh/kg` :
+                activeKPIId === 'processStability' ? `${activeBatchKPIs.processStability}%` :
+                activeKPIId === 'oee' ? `${activeBatchKPIs.oee}%` :
+                undefined
+              }
+              onClose={() => setActiveKPIId(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

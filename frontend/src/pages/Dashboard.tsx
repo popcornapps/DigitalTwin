@@ -7,6 +7,8 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceArea, BarChart, Bar } from 'recharts';
 import { getMockKPIs, getMockParameters, getMockTrendData, getMockAnomalies } from '../lib/mockData';
 import { useFilter } from '../context/FilterContext';
+import { KPIInfoModal } from '../components/KPIInfoModal';
+import { getKPIDefinition } from '../lib/kpiDefinitions';
 
 export default function Dashboard() {
   const { selectedPlant, selectedProduct, selectedBatch, selectedPersona } = useFilter();
@@ -18,6 +20,7 @@ export default function Dashboard() {
   // React states called at top level unconditionally
   const [activeParamName, setActiveParamName] = useState('Temperature');
   const [activeAnomalyId, setActiveAnomalyId] = useState<string | null>(null);
+  const [activeKPIId, setActiveKPIId] = useState<string | null>(null);
 
   // Core Mock data runs safely for all personas
   const mockKPIs = getMockKPIs(selectedPlant, selectedProduct);
@@ -237,9 +240,9 @@ export default function Dashboard() {
       {/* 1. KPI Cards Row */}
       {selectedPersona === 'Plant Manager' && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <KPICard title="Plant Performance" value="94%" trend="up" trendValue="+1.2%" desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" />
-          <KPICard title="OEE" value={`${mockKPIs.oee}%`} trend="up" trendValue="+0.8%" desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" />
-          <KPICard title="Quality Score" value={`${mockKPIs.qualityScore}%`} trend="flat" trendValue="0.0%" desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" />
+          <KPICard title="Plant Performance" value={`${mockKPIs.plantPerformance}%`} trend="up" trendValue="+1.2%" desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" kpiId="plantPerformance" onClick={() => setActiveKPIId('plantPerformance')} />
+          <KPICard title="OEE" value={`${mockKPIs.oee}%`} trend="up" trendValue="+0.8%" desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" kpiId="oee" onClick={() => setActiveKPIId('oee')} />
+          <KPICard title="Quality Score" value={`${mockKPIs.qualityScore}%`} trend="flat" trendValue="0.0%" desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" kpiId="qualityScore" onClick={() => setActiveKPIId('qualityScore')} />
           <KPICard title="Production Status" value="4 / 6" trend="up" trendValue="On Track" desc="Running vs Completed Batches" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
           <KPICard title="Active Alerts" value="2" trend="down" trendValue="-3 issues" desc="Current operational warnings" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" />
         </div>
@@ -668,17 +671,43 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* KPI Information Modal */}
+      {activeKPIId && getKPIDefinition(activeKPIId) && (
+        <KPIInfoModal
+          kpiDefinition={getKPIDefinition(activeKPIId)!}
+          currentValue={
+            activeKPIId === 'oee' ? `${mockKPIs.oee}%` :
+            activeKPIId === 'qualityScore' ? `${mockKPIs.qualityScore}%` :
+            activeKPIId === 'plantPerformance' ? `${mockKPIs.plantPerformance}%` :
+            undefined
+          }
+          onClose={() => setActiveKPIId(null)}
+        />
+      )}
+
     </div>
   );
 }
 
-function KPICard({ 
-  title, value, trend: _trend, trendValue, desc, icon, color, bg 
-}: { 
-  title: string, value: string, trend?: 'up' | 'down' | 'flat', trendValue: string, desc: string, icon: React.ReactNode, color: string, bg: string 
+function KPICard({
+  title, value, trend: _trend, trendValue, desc, icon, color, bg, kpiId, onClick
+}: {
+  title: string, value: string, trend?: 'up' | 'down' | 'flat', trendValue: string, desc: string, icon: React.ReactNode, color: string, bg: string, kpiId?: string, onClick?: () => void
 }) {
+  const hasInfo = !!kpiId;
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col justify-between hover:shadow-md transition-shadow duration-200">
+    <div
+      onClick={onClick}
+      className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col justify-between transition-all duration-200 ${hasInfo ? 'cursor-pointer hover:shadow-lg hover:border-indigo-300' : 'hover:shadow-md'} relative`}
+    >
+      {hasInfo && (
+        <div className="absolute top-2 right-2">
+          <div className="bg-indigo-100 text-indigo-600 rounded-full p-1 opacity-60 hover:opacity-100 transition-opacity">
+            <Info size={12} />
+          </div>
+        </div>
+      )}
       <div className="flex justify-between items-start mb-2">
         <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{title}</p>
         <div className={`p-1.5 rounded-lg ${bg} ${color}`}>
@@ -690,8 +719,8 @@ function KPICard({
           <p className="text-lg font-black text-gray-900 leading-none">{value}</p>
           <div className="flex items-center text-[10px] font-bold mb-0.5">
             <span className={
-              trendValue.includes('+') || trendValue === 'Warning' || trendValue === 'Critical' 
-                ? 'text-rose-600' 
+              trendValue.includes('+') || trendValue === 'Warning' || trendValue === 'Critical'
+                ? 'text-rose-600'
                 : trendValue === 'Normal' || trendValue === 'Approved' || trendValue.includes('Track') || trendValue.includes('Asses') || trendValue.includes('Check')
                 ? 'text-emerald-600'
                 : 'text-gray-500'
@@ -699,6 +728,9 @@ function KPICard({
           </div>
         </div>
         <p className="text-[10px] font-semibold text-gray-400 leading-tight mt-1">{desc}</p>
+        {hasInfo && (
+          <p className="text-[9px] font-bold text-indigo-400 mt-1.5 uppercase tracking-wider">Click for details</p>
+        )}
       </div>
     </div>
   );
