@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, AlertTriangle, Inbox, TrendingUp } from 'lucide-react';
+import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, AlertTriangle, Inbox, TrendingUp, Sparkles } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import BatchExplorer from './pages/BatchExplorer';
 import ProcessMonitoring from './pages/ProcessMonitoring';
@@ -9,20 +9,21 @@ import AnomalyIntelligence from './pages/AnomalyIntelligence';
 import QualityWorkbench from './pages/QualityWorkbench';
 import AiCopilot from './pages/AiCopilot';
 import ReviewDesk from './pages/ReviewDesk';
+import DeviationPrediction from './pages/DeviationPrediction';
 import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterContext';
 
 export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages: string[] }> = {
   'Plant Manager': {
     landingPage: '/dashboard',
-    visiblePages: ['/dashboard', '/batch-explorer', '/golden-batch', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/dashboard', '/batch-explorer', '/golden-batch', '/deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
   },
   'Plant Operator': {
     landingPage: '/process-monitoring',
-    visiblePages: ['/process-monitoring', '/batch-explorer', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/process-monitoring', '/batch-explorer', '/deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
   },
   'Quality Engineer': {
     landingPage: '/anomaly-intelligence',
-    visiblePages: ['/anomaly-intelligence', '/quality-workbench', '/batch-explorer', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/anomaly-intelligence', '/quality-workbench', '/batch-explorer', '/deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
   }
 };
 
@@ -38,6 +39,7 @@ function Sidebar() {
     { name: 'Golden Batch', path: '/golden-batch', icon: <FileText size={20} /> },
     { name: 'Anomaly Intelligence', path: '/anomaly-intelligence', icon: <AlertTriangle size={20} /> },
     { name: 'Quality Workbench', path: '/quality-workbench', icon: <Activity size={20} /> },
+    { name: 'Deviation Prediction', path: '/deviation-prediction', icon: <Sparkles size={20} /> },
     { name: 'AI Review Desk', path: '/review-desk', icon: <Inbox size={20} /> },
     { name: 'AI Copilot', path: '/ai-copilot', icon: <BrainCircuit size={20} /> },
   ];
@@ -233,6 +235,7 @@ function AppContent() {
               <Route path="/golden-batch" element={<GoldenBatch />} />
               <Route path="/anomaly-intelligence" element={<AnomalyIntelligence />} />
               <Route path="/quality-workbench" element={<QualityWorkbench />} />
+              <Route path="/deviation-prediction" element={<DeviationPrediction />} />
               <Route path="/review-desk" element={<ReviewDesk />} />
               <Route path="/ai-copilot" element={<AiCopilot />} />
               <Route path="*" element={<div className="max-w-7xl mx-auto"><h2 className="text-xl text-gray-500 text-center mt-20">Page is under construction.</h2></div>} />
