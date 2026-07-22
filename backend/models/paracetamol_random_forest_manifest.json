@@ -1,0 +1,119 @@
+{
+  "model_type": "RandomForestRegressor (native multi-output)",
+  "hyperparameters": {
+    "n_estimators": 100,
+    "max_depth": null
+  },
+  "random_state": 42,
+  "feature_columns": [
+    "elapsed_minutes",
+    "temperature_current",
+    "temperature_mean_30",
+    "temperature_std_30",
+    "temperature_min_30",
+    "temperature_max_30",
+    "temperature_slope_30",
+    "process_pressure_current",
+    "process_pressure_mean_30",
+    "process_pressure_std_30",
+    "process_pressure_min_30",
+    "process_pressure_max_30",
+    "process_pressure_slope_30",
+    "flow_rate_current",
+    "flow_rate_mean_30",
+    "flow_rate_std_30",
+    "flow_rate_min_30",
+    "flow_rate_max_30",
+    "flow_rate_slope_30",
+    "agitator_rpm_current",
+    "agitator_rpm_mean_30",
+    "agitator_rpm_std_30",
+    "agitator_rpm_min_30",
+    "agitator_rpm_max_30",
+    "agitator_rpm_slope_30"
+  ],
+  "target_columns": [
+    "temperature_target_30min",
+    "process_pressure_target_30min",
+    "flow_rate_target_30min",
+    "agitator_rpm_target_30min"
+  ],
+  "trained_on": "train + val splits combined",
+  "evaluated_on": "test split only",
+  "row_counts": {
+    "train": 27535,
+    "val": 5943,
+    "test": 6053,
+    "train_plus_val": 33478
+  },
+  "test_metrics": [
+    {
+      "target": "temperature_target_30min",
+      "MAE": 0.9784617545019,
+      "RMSE": 1.8877202630006211,
+      "R2": 0.9667216072173791
+    },
+    {
+      "target": "process_pressure_target_30min",
+      "MAE": 0.028609582025442,
+      "RMSE": 0.04207423097270451,
+      "R2": 0.8133457063638226
+    },
+    {
+      "target": "flow_rate_target_30min",
+      "MAE": 2.6283520568313237,
+      "RMSE": 5.992287734875422,
+      "R2": 0.8712878191379547
+    },
+    {
+      "target": "agitator_rpm_target_30min",
+      "MAE": 0.11452337683793161,
+      "RMSE": 0.6637138375482178,
+      "R2": 0.9737501123450786
+    }
+  ],
+  "top_10_features": [
+    {
+      "feature": "temperature_mean_30",
+      "importance": 0.5907482117884302
+    },
+    {
+      "feature": "elapsed_minutes",
+      "importance": 0.2035523451754978
+    },
+    {
+      "feature": "agitator_rpm_mean_30",
+      "importance": 0.03442909790089447
+    },
+    {
+      "feature": "flow_rate_current",
+      "importance": 0.031738671918944056
+    },
+    {
+      "feature": "flow_rate_max_30",
+      "importance": 0.02993719706813071
+    },
+    {
+      "feature": "flow_rate_mean_30",
+      "importance": 0.025917868356429685
+    },
+    {
+      "feature": "process_pressure_mean_30",
+      "importance": 0.010854934798740137
+    },
+    {
+      "feature": "temperature_min_30",
+      "importance": 0.00903933098920205
+    },
+    {
+      "feature": "temperature_max_30",
+      "importance": 0.00668955125593783
+    },
+    {
+      "feature": "flow_rate_min_30",
+      "importance": 0.006564685785610751
+    }
+  ],
+  "sklearn_version": "1.9.0",
+  "generated_at": "2026-07-21T15:41:54Z"
+}

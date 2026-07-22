@@ -1,0 +1,4 @@
+ground_truth,Alert,No Alert
+Normal,9,3
+Warning,2,2
+Critical,2,0
