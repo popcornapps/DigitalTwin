@@ -20,6 +20,26 @@ async function fetchJson<T>(path: string): Promise<T> {
   return response.json();
 }
 
+async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError('Could not reach the prediction API. Is the backend running? (.venv/bin/uvicorn app.main:app --port 8000, from backend/)');
+  }
+
+  if (!response.ok) {
+    const body2 = await response.json().catch(() => null);
+    throw new ApiError(body2?.detail || `Request failed (${response.status})`);
+  }
+
+  return response.json();
+}
+
 export interface ValidTimeRange {
   min_elapsed_minutes: number;
   max_elapsed_minutes: number;
@@ -49,6 +69,7 @@ export interface ParameterPrediction {
   upper_limit: number;
   alert_level: 'Normal' | 'Warning' | 'Critical' | 'Not Applicable';
   actual: number | null;
+  actual_alert_level: 'Normal' | 'Warning' | 'Critical' | null;
   error: number | null;
   correctness: 'Correct catch' | 'Correct quiet' | 'Missed' | 'False alarm' | null;
 }
@@ -125,6 +146,23 @@ export const fetchTimeline = (batchId: string): Promise<TimelineResponse> =>
 
 export const fetchParameterConfig = (): Promise<ParameterConfigEntry[]> => fetchJson('/parameters/config');
 
+// Per-minute deviation envelope derived from real Normal historical batches
+// vs the golden batch - Golden(t) +/- offset(t), replacing the fixed
+// parameter_config band as the basis for deviation status.
+export interface GoldenEnvelopePoint {
+  elapsed_minutes: number;
+  temperature_lower_offset: number;
+  temperature_upper_offset: number;
+  process_pressure_lower_offset: number;
+  process_pressure_upper_offset: number;
+  flow_rate_lower_offset: number;
+  flow_rate_upper_offset: number;
+  agitator_rpm_lower_offset: number;
+  agitator_rpm_upper_offset: number;
+}
+
+export const fetchGoldenEnvelope = (): Promise<GoldenEnvelopePoint[]> => fetchJson('/parameters/envelope');
+
 export const fetchPrediction = (batchId: string, at: number): Promise<PredictionResponse> =>
   fetchJson(`/batches/${encodeURIComponent(batchId)}/predict?at=${at}`);
 
@@ -137,3 +175,63 @@ export const fetchPlantKpiRollup = (plant: string): Promise<PlantKpiRollup> =>
   fetchJson(`/batch-kpis/rollup?plant=${encodeURIComponent(plant)}`);
 
 export const GOLDEN_BATCH_ID = 'PAR-GOLDEN';
+
+// --- Running Batch Monitoring / Live Telemetry ---
+
+export interface RunningBatchSummary {
+  running_batch_id: string;
+  plant: string;
+  product: string;
+  status: 'Running' | 'Completed' | 'Stopped';
+  scenario_profile: 'Normal' | 'Warning' | 'Critical';
+  drifting_parameter: string | null;
+  phase: string;
+  started_at: string;
+  elapsed_minutes: number;
+  target_duration_minutes: number;
+}
+
+export interface LiveTelemetryPoint {
+  elapsed_minutes: number;
+  recorded_at: string;
+  phase: string;
+  temperature: number;
+  process_pressure: number;
+  flow_rate: number;
+  agitator_rpm: number;
+}
+
+export interface LiveParameterPrediction {
+  key: string;
+  predicted: number;
+  ci_low: number;
+  ci_high: number;
+  alert_level: 'Normal' | 'Warning' | 'Critical';
+}
+
+export interface LivePrediction {
+  horizon_minutes: number;
+  computed_at_elapsed_minutes: number;
+  parameters: LiveParameterPrediction[];
+}
+
+export interface RunningBatchTelemetryResponse {
+  batch: RunningBatchSummary;
+  points: LiveTelemetryPoint[];
+  // null until 30+ minutes of history exist for this batch.
+  prediction: LivePrediction | null;
+}
+
+export const fetchRunningBatches = (): Promise<RunningBatchSummary[]> => fetchJson('/live-batches');
+
+export const fetchRunningBatchTelemetry = (runningBatchId: string): Promise<RunningBatchTelemetryResponse> =>
+  fetchJson(`/live-batches/${encodeURIComponent(runningBatchId)}/telemetry`);
+
+export const createRunningBatch = (
+  plant: string,
+  scenarioProfile: 'Normal' | 'Warning' | 'Critical' = 'Normal',
+): Promise<RunningBatchSummary> =>
+  postJson('/live-batches', { plant, scenario_profile: scenarioProfile });
+
+export const stopRunningBatch = (runningBatchId: string): Promise<RunningBatchSummary> =>
+  postJson(`/live-batches/${encodeURIComponent(runningBatchId)}/stop`);

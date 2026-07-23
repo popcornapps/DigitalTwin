@@ -10,11 +10,16 @@ const ALERT_STYLES: Record<string, { badge: string; card: string; dot: string; t
   'Not Applicable': { badge: 'bg-gray-50 text-gray-500 border-gray-200', card: 'border-gray-200', dot: 'bg-gray-300', text: 'text-gray-500' },
 };
 
-const CORRECTNESS_STYLES: Record<string, string> = {
-  'Correct catch': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Correct quiet': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Missed: 'bg-red-50 text-red-700 border-red-200',
-  'False alarm': 'bg-amber-50 text-amber-700 border-amber-200',
+// Plain-language relabeling of the backend's raw evaluation categories, so
+// this reads without needing to know what "recall" or "false positive" mean.
+// Severity-coded: green = model worked, gray = nothing happened (least
+// interesting), orange = an unnecessary alert, red = a real deviation the
+// model didn't catch (the case that matters most).
+const CORRECTNESS_DISPLAY: Record<string, { label: string; badge: string }> = {
+  'Correct catch': { label: 'Deviation caught', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  'Correct quiet': { label: 'Correctly stayed normal', badge: 'bg-gray-100 text-gray-600 border-gray-200' },
+  Missed: { label: 'Deviation not caught', badge: 'bg-red-50 text-red-700 border-red-200' },
+  'False alarm': { label: 'Unnecessary alert', badge: 'bg-orange-50 text-orange-700 border-orange-200' },
 };
 
 const DEBOUNCE_MS = 250;
@@ -270,10 +275,15 @@ export default function DeviationPrediction() {
                           </span>
                         </div>
                         {p.correctness && (
-                          <div className="pt-1">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${CORRECTNESS_STYLES[p.correctness]}`}>
-                              {p.correctness}
+                          <div className="pt-1 space-y-1">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${CORRECTNESS_DISPLAY[p.correctness].badge}`}>
+                              {CORRECTNESS_DISPLAY[p.correctness].label}
                             </span>
+                            <div className="text-[10px] text-gray-400">
+                              Predicted: <span className="font-semibold text-gray-500">{p.alert_level}</span>
+                              {' · '}
+                              Actual: <span className="font-semibold text-gray-500">{p.actual_alert_level ?? '—'}</span>
+                            </div>
                           </div>
                         )}
                       </>
