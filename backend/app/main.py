@@ -1,17 +1,27 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import CORS_ORIGINS
-from app.routers import batch_kpis, batches, parameters, predictions
+from app.live import scheduler as live_scheduler
+from app.live import service as live_service
+from app.routers import batch_kpis, batches, live_batches, parameters, predictions
 from app.state import app_state
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     app_state.load()  # model (~400MB) + reference data loaded once, held for the process lifetime
+    live_service.seed_default_batches()  # 3 default running batches: Normal, Warning, Critical
+    tick_task = live_scheduler.start()
     yield
+    tick_task.cancel()
+    try:
+        await tick_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title='PharmaTwin Deviation Prediction API', lifespan=lifespan)
@@ -27,6 +37,7 @@ app.include_router(batches.router)
 app.include_router(predictions.router)
 app.include_router(parameters.router)
 app.include_router(batch_kpis.router)
+app.include_router(live_batches.router)
 
 
 @app.get('/api/health')

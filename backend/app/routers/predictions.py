@@ -55,6 +55,7 @@ def predict_at(batch_id: str, at: int):
             upper_limit=hi,
             alert_level=predicted_alert,
             actual=round(actual, 2),
+            actual_alert_level=actual_alert,
             error=round(pred['predicted'] - actual, 2),
             correctness=correctness(predicted_alert, actual_alert),
         ))
@@ -73,6 +74,7 @@ def predict_at(batch_id: str, at: int):
         upper_limit=rpm_hi,
         alert_level='Not Applicable',
         actual=None,
+        actual_alert_level=None,
         error=None,
         correctness=None,
     ))

@@ -14,6 +14,7 @@ class ParameterPrediction(BaseModel):
     upper_limit: float
     alert_level: str
     actual: float | None
+    actual_alert_level: str | None
     error: float | None
     correctness: str | None
 

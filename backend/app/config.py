@@ -10,6 +10,7 @@ BATCHES_CSV = DATA_DIR / 'paracetamol_batches.csv'
 TIMESERIES_CSV = DATA_DIR / 'paracetamol_batch_timeseries.csv'
 TRAINING_DATASET_CSV = DATA_DIR / 'paracetamol_training_dataset.csv'
 PARAMETER_CONFIG_CSV = DATA_DIR / 'paracetamol_parameter_config.csv'
+GOLDEN_ENVELOPE_CSV = DATA_DIR / 'paracetamol_golden_envelope.csv'
 BATCH_KPIS_CSV = DATA_DIR / 'paracetamol_batch_kpis.csv'
 BATCH_KPIS_MANIFEST_PATH = DATA_DIR / 'paracetamol_batch_kpis_manifest.json'
 

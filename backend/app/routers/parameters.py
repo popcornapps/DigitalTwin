@@ -18,3 +18,13 @@ def get_parameter_config():
         }
         for key in ALL_PARAMETER_KEYS
     ]
+
+
+@router.get('/envelope')
+def get_golden_envelope():
+    """Per-minute deviation envelope derived from real Normal historical
+    batches vs the golden batch (see scripts/generate-golden-envelope) - the
+    dynamic Golden(t) +/- Margin(t) reference that replaces the fixed
+    parameter_config band for deviation status in Process Monitoring."""
+    df = app_state.golden_envelope_df.reset_index()
+    return df.to_dict(orient='records')
