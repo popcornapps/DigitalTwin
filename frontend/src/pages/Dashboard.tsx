@@ -9,9 +9,33 @@ import { getMockKPIs, getMockParameters, getMockTrendData, getMockAnomalies } fr
 import { useFilter } from '../context/FilterContext';
 import { KPIInfoModal } from '../components/KPIInfoModal';
 import { getKPIDefinition } from '../lib/kpiDefinitions';
+import { fetchPlantKpiRollup } from '../lib/api';
+import type { PlantKpiRollup } from '../lib/api';
 
 export default function Dashboard() {
   const { selectedPlant, selectedProduct, selectedBatch, selectedPersona } = useFilter();
+
+  // Real, backed by batch_kpis - a rollup query (mean OEE/Quality/Process
+  // Stability across the plant's batches), not a stored column. Only the
+  // Manager persona reads this; Operator/QE views are untouched here.
+  const [plantRollup, setPlantRollup] = useState<PlantKpiRollup | null>(null);
+  const [plantRollupError, setPlantRollupError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPlantRollup(null);
+    setPlantRollupError(null);
+    fetchPlantKpiRollup(selectedPlant)
+      .then((res) => {
+        if (!cancelled) setPlantRollup(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setPlantRollupError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPlant]);
 
   const rawBatchCode = selectedBatch === 'All Batches' 
     ? `${selectedPlant.substring(0, 3).toUpperCase()}-${selectedProduct.substring(0, 3).toUpperCase()}-018`
@@ -184,12 +208,14 @@ export default function Dashboard() {
 
   const activeAnomaly = enrichedAnomalies.find(a => a.id === activeAnomalyId) || enrichedAnomalies[0] || null;
 
-  // AI insights
-  const aiExecutiveInsights = [
-    `Plant performance remains ${mockKPIs.plantPerformance > 90 ? 'above' : 'below'} baseline target.`,
+  // AI insights (Manager persona) - real, driven by the plant KPI rollup
+  const aiExecutiveInsights = plantRollup ? [
+    `Plant performance remains ${plantRollup.plant_performance_pct > 90 ? 'above' : 'below'} baseline target.`,
     "Production schedule is progressing as planned with minor delays.",
-    `OEE has ${mockKPIs.oee > 90 ? 'improved' : 'decreased'} compared to yesterday.`,
+    `OEE across ${plantRollup.batch_count} recorded batches is ${plantRollup.oee_pct > 90 ? 'strong' : 'below target'} at ${plantRollup.oee_pct}%.`,
     "No major quality or safety risks detected for the active shift."
+  ] : [
+    "Loading plant performance rollup…",
   ];
 
   const recentAlerts = [
@@ -240,9 +266,9 @@ export default function Dashboard() {
       {/* 1. KPI Cards Row */}
       {selectedPersona === 'Plant Manager' && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <KPICard title="Plant Performance" value={`${mockKPIs.plantPerformance}%`} trend="up" trendValue="+1.2%" desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" kpiId="plantPerformance" onClick={() => setActiveKPIId('plantPerformance')} />
-          <KPICard title="OEE" value={`${mockKPIs.oee}%`} trend="up" trendValue="+0.8%" desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" kpiId="oee" onClick={() => setActiveKPIId('oee')} />
-          <KPICard title="Quality Score" value={`${mockKPIs.qualityScore}%`} trend="flat" trendValue="0.0%" desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" kpiId="qualityScore" onClick={() => setActiveKPIId('qualityScore')} />
+          <KPICard title="Plant Performance" value={plantRollup ? `${plantRollup.plant_performance_pct}%` : '—'} trend="flat" trendValue={plantRollup ? `${plantRollup.batch_count} batches` : plantRollupError ? 'Error' : 'Loading'} desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" kpiId="plantPerformance" onClick={() => setActiveKPIId('plantPerformance')} />
+          <KPICard title="OEE" value={plantRollup ? `${plantRollup.oee_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" kpiId="oee" onClick={() => setActiveKPIId('oee')} />
+          <KPICard title="Quality Score" value={plantRollup ? `${plantRollup.quality_score_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" kpiId="qualityScore" onClick={() => setActiveKPIId('qualityScore')} />
           <KPICard title="Production Status" value="4 / 6" trend="up" trendValue="On Track" desc="Running vs Completed Batches" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
           <KPICard title="Active Alerts" value="2" trend="down" trendValue="-3 issues" desc="Current operational warnings" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" />
         </div>
@@ -314,15 +340,22 @@ export default function Dashboard() {
               
               <div className="h-72 flex-1 min-h-[250px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={[
-                    { time: '00:00', current: mockKPIs.plantPerformance - 6, best: 95 },
-                    { time: '04:00', current: mockKPIs.plantPerformance - 2, best: 96 },
-                    { time: '08:00', current: mockKPIs.plantPerformance + 1, best: 96 },
-                    { time: '12:00', current: mockKPIs.plantPerformance - 3, best: 97 },
-                    { time: '16:00', current: mockKPIs.plantPerformance, best: 96 },
-                    { time: '20:00', current: mockKPIs.plantPerformance + 2, best: 98 },
-                    { time: '24:00', current: mockKPIs.plantPerformance + 1, best: 97 }
-                  ]}>
+                  <LineChart data={(() => {
+                    // Real plant_performance_pct anchors the series; the intraday
+                    // shape itself isn't tracked hourly by batch_kpis (a per-batch,
+                    // not per-hour, dataset) so the same offsets used before are
+                    // kept to illustrate a trend around the one real anchor value.
+                    const base = plantRollup?.plant_performance_pct ?? 0;
+                    return [
+                      { time: '00:00', current: base - 6, best: 95 },
+                      { time: '04:00', current: base - 2, best: 96 },
+                      { time: '08:00', current: base + 1, best: 96 },
+                      { time: '12:00', current: base - 3, best: 97 },
+                      { time: '16:00', current: base, best: 96 },
+                      { time: '20:00', current: base + 2, best: 98 },
+                      { time: '24:00', current: base + 1, best: 97 },
+                    ];
+                  })()}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                     <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
                     <YAxis domain={[80, 100]} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} />
@@ -676,9 +709,9 @@ export default function Dashboard() {
         <KPIInfoModal
           kpiDefinition={getKPIDefinition(activeKPIId)!}
           currentValue={
-            activeKPIId === 'oee' ? `${mockKPIs.oee}%` :
-            activeKPIId === 'qualityScore' ? `${mockKPIs.qualityScore}%` :
-            activeKPIId === 'plantPerformance' ? `${mockKPIs.plantPerformance}%` :
+            activeKPIId === 'oee' && plantRollup ? `${plantRollup.oee_pct}%` :
+            activeKPIId === 'qualityScore' && plantRollup ? `${plantRollup.quality_score_pct}%` :
+            activeKPIId === 'plantPerformance' && plantRollup ? `${plantRollup.plant_performance_pct}%` :
             undefined
           }
           onClose={() => setActiveKPIId(null)}
