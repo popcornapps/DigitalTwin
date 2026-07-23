@@ -1,0 +1,103 @@
+{
+  "generation_method_version": "v1",
+  "row_grain": "one row per batch - completed-batch summary, not a time series",
+  "source_files": [
+    "data/paracetamol_batches.csv",
+    "data/paracetamol_batch_timeseries.csv",
+    "data/paracetamol_parameter_config.csv"
+  ],
+  "columns": {
+    "batch_id": {
+      "provenance": "real",
+      "has_temporal_signal": false,
+      "note": "PK / FK -> batches"
+    },
+    "cycle_time_hrs": {
+      "provenance": "real",
+      "has_temporal_signal": false
+    },
+    "process_stability_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": true,
+      "note": "mean of the three in_control_pct columns below, computed over valid_time_range"
+    },
+    "process_stability_in_control_pct_temperature": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "process_stability_in_control_pct_process_pressure": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "process_stability_in_control_pct_flow_rate": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "golden_batch_similarity_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": true,
+      "note": "mean of the three per-parameter similarity columns below, vs PAR-GOLDEN over the shared valid_time_range window"
+    },
+    "golden_batch_similarity_pct_temperature": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "golden_batch_similarity_pct_process_pressure": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "golden_batch_similarity_pct_flow_rate": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "fault_onset_elapsed_minutes": {
+      "provenance": "derived",
+      "has_temporal_signal": true,
+      "note": "first elapsed_minutes within valid_time_range where any of the 3 drying parameters left its band; NaN if none (Normal batches, or a fault that never crossed the band)"
+    },
+    "yield_pct": {
+      "provenance": "synthetic",
+      "has_temporal_signal": false,
+      "note": "severity-tiered, seeded-hash, batch-level constant - no within-batch trajectory to predict from"
+    },
+    "quality_score_pct": {
+      "provenance": "synthetic",
+      "has_temporal_signal": false,
+      "note": "temporary placeholder pending real batch_cqa_results (Quality Workbench Tier 3)"
+    },
+    "oee_availability_pct": {
+      "provenance": "derived_proxy",
+      "has_temporal_signal": false,
+      "note": "uses FINAL batch_duration_minutes - not valid as a mid-batch prediction target without reformulation"
+    },
+    "oee_performance_pct": {
+      "provenance": "synthetic",
+      "has_temporal_signal": false
+    },
+    "oee_quality_pct": {
+      "provenance": "semi_derived",
+      "has_temporal_signal": false,
+      "note": "function of real process_stability_pct + seeded noise, but computed once at the end"
+    },
+    "oee_pct": {
+      "provenance": "formula",
+      "has_temporal_signal": false,
+      "note": "availability * performance * quality / 10000"
+    },
+    "total_energy_kwh": {
+      "provenance": "semi_derived",
+      "has_temporal_signal": false,
+      "note": "uses FINAL batch_duration_minutes - same caveat as oee_availability_pct"
+    },
+    "sec_kwh_per_kg": {
+      "provenance": "semi_derived",
+      "has_temporal_signal": false,
+      "note": "total_energy_kwh / output_kg, output_kg derived from synthetic yield_pct"
+    },
+    "generation_method_version": {
+      "provenance": "metadata",
+      "has_temporal_signal": false
+    }
+  },
+  "prediction_readiness_note": "This dataset is an end-of-batch summary only - no forecasting labels or rolling/cumulative KPI trajectories are built here. Columns marked has_temporal_signal=true are the ones a future KPI-deterioration-prediction effort could plausibly reshape into a time series (their per-parameter sub-components are stored here specifically to avoid recomputation later); columns marked false are either batch-level constants with no within-batch trajectory (synthetic fields) or derived from a value (final duration) that is only known once the batch has already finished. See docs/batch-kpis-prediction-readiness-review.md for the full analysis."
+}

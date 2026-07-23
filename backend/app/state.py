@@ -15,6 +15,7 @@ class AppState:
         self.batches_df: pd.DataFrame | None = None
         self.timeseries_df: pd.DataFrame | None = None
         self.training_df: pd.DataFrame | None = None
+        self.batch_kpis_df: pd.DataFrame | None = None
         self.parameter_limits: dict[str, tuple[float, float]] = {}
         self.test_batch_ids: set[str] = set()
 
@@ -26,6 +27,7 @@ class AppState:
 
         self.batches_df = pd.read_csv(config.BATCHES_CSV).set_index('batch_id')
         self.timeseries_df = pd.read_csv(config.TIMESERIES_CSV)
+        self.batch_kpis_df = pd.read_csv(config.BATCH_KPIS_CSV).set_index('batch_id')
 
         needed_columns = ['batch_id', 'split', 'elapsed_minutes'] + self.feature_columns + self.target_columns
         self.training_df = pd.read_csv(config.TRAINING_DATASET_CSV, usecols=needed_columns)

@@ -10,6 +10,8 @@ BATCHES_CSV = DATA_DIR / 'paracetamol_batches.csv'
 TIMESERIES_CSV = DATA_DIR / 'paracetamol_batch_timeseries.csv'
 TRAINING_DATASET_CSV = DATA_DIR / 'paracetamol_training_dataset.csv'
 PARAMETER_CONFIG_CSV = DATA_DIR / 'paracetamol_parameter_config.csv'
+BATCH_KPIS_CSV = DATA_DIR / 'paracetamol_batch_kpis.csv'
+BATCH_KPIS_MANIFEST_PATH = DATA_DIR / 'paracetamol_batch_kpis_manifest.json'
 
 LOOKBACK_MINUTES = 30
 HORIZON_MINUTES = 30

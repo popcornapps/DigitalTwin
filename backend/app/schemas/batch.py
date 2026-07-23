@@ -13,4 +13,5 @@ class BatchSummary(BaseModel):
     ground_truth_scenario: str
     ground_truth_severity: str
     batch_duration_minutes: int
+    batch_start_datetime: str
     valid_time_range: ValidTimeRange
