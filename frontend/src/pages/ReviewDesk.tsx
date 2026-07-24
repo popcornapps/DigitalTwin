@@ -1,10 +1,56 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useFilter } from '../context/FilterContext';
 import { getMockRecommendations, getMockActivity, AIRecommendation, RecommendationStatus } from '../lib/mockData';
+import { fetchAlerts } from '../lib/api';
+import type { DeviationAlert } from '../lib/api';
 import {
   Inbox, CheckCircle2, XCircle, Clock,
   Info, Activity, Filter, FileText, Zap, AlertTriangle
 } from 'lucide-react';
+
+const ALERTS_POLL_INTERVAL_MS = 5000;
+
+// Urgency (the LLM reasoning layer's operational-priority call, factoring in
+// severity + time-to-breach) maps onto this page's 3-level priority - more
+// informative than deriving priority from severity alone, since it already
+// accounts for how much time is actually left.
+const URGENCY_TO_PRIORITY: Record<string, 'Critical' | 'Medium' | 'Low'> = {
+  'Immediate Action Required': 'Critical',
+  'Action Recommended Soon': 'Medium',
+  'Monitor Closely': 'Low',
+  'Informational Only': 'Low',
+};
+
+// Real Process Parameter Deviation Agent alerts, shaped to fit the same
+// AIRecommendation card/table/modal this page already renders - additive to
+// the existing mock inbox, not a replacement of it. This is what closes the
+// loop: prediction -> alert -> shows up here -> gets acted on. The narrative
+// fields (alert_summary/trigger_explanation/likely_root_cause/
+// recommended_action/operational_impact) are the LLM reasoning layer's
+// output, persisted on the alert record itself - the same explanation shown
+// in Process Monitoring, not re-derived here.
+function alertToRecommendation(alert: DeviationAlert): AIRecommendation {
+  const titleAction = alert.trigger_type === 'predicted' ? 'predicted to deviate' : 'deviation detected';
+  return {
+    id: alert.alert_id,
+    source: 'Process Parameter Deviation Agent',
+    batchId: alert.running_batch_id,
+    timestamp: new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    createdDate: alert.created_at,
+    priority: alert.urgency ? URGENCY_TO_PRIORITY[alert.urgency] : (alert.severity === 'Critical' ? 'Critical' : 'Medium'),
+    // The AIRecommendation status union has no "Resolved" - closest honest
+    // mapping is Acknowledged (the situation is closed), unless a human has
+    // already applied their own status locally (handled by the merge below).
+    status: alert.status === 'Resolved' ? 'Acknowledged' : 'New',
+    title: alert.alert_summary ?? `${alert.parameter_label} ${titleAction}`,
+    description: alert.trigger_explanation ?? [alert.observation, alert.predicted_observation].filter(Boolean).join(' '),
+    reasoning: alert.likely_root_cause ?? 'No matching historical fault pattern identified for this deviation yet.',
+    expectedBenefit: alert.operational_impact ?? 'Early correction reduces the risk of an out-of-spec batch.',
+    suggestedAction: alert.recommended_action ?? 'Continue monitoring - no specific corrective action identified yet.',
+    plant: alert.plant,
+    product: 'Paracetamol 500mg',
+  };
+}
 
 // Returns age in days from createdDate ISO string to "today" (2026-07-20)
 function getAgeDays(createdDateISO: string): number {
@@ -28,20 +74,43 @@ export default function ReviewDesk() {
   const [filterPriority, setFilterPriority] = useState<string>('All');
   const [filterSource, setFilterSource] = useState<string>('All');
 
-  const [recommendations, setRecommendations] = useState<AIRecommendation[]>([]);
   const [activeRecId, setActiveRecId] = useState<string | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  // Local Acknowledge/Reject actions, keyed by id - applied on top of
+  // whatever the mock data or the real alert feed says, so a poll refresh
+  // (every 5s) can't silently undo a click the user already made.
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, RecommendationStatus>>({});
 
-  const rawRecs = useMemo(() => getMockRecommendations(selectedPlant, selectedProduct, selectedPersona), [selectedPlant, selectedProduct, selectedPersona]);
+  const mockRecs = useMemo(() => getMockRecommendations(selectedPlant, selectedProduct, selectedPersona), [selectedPlant, selectedProduct, selectedPersona]);
   const activityLog = useMemo(() => getMockActivity(), []);
 
-  // Sync state when rawRecs change (e.g. persona switch or plant/product filter)
+  const [realAlerts, setRealAlerts] = useState<DeviationAlert[]>([]);
   useEffect(() => {
-    setRecommendations(rawRecs);
-  }, [rawRecs]);
+    let cancelled = false;
+    const poll = () => {
+      fetchAlerts()
+        .then((alerts) => {
+          if (!cancelled) setRealAlerts(alerts);
+        })
+        .catch(() => {
+          // A transient poll failure just keeps showing the last known alerts.
+        });
+    };
+    poll();
+    const interval = setInterval(poll, ALERTS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const recommendations: AIRecommendation[] = useMemo(() => {
+    const combined = [...realAlerts.map(alertToRecommendation), ...mockRecs];
+    return combined.map((r) => (statusOverrides[r.id] ? { ...r, status: statusOverrides[r.id] } : r));
+  }, [mockRecs, realAlerts, statusOverrides]);
 
   const handleAction = (id: string, newStatus: RecommendationStatus) => {
-    setRecommendations(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+    setStatusOverrides((prev) => ({ ...prev, [id]: newStatus }));
     setActiveRecId(null); // Close modal on action
   };
 
@@ -302,7 +371,7 @@ export default function ReviewDesk() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Suggested Action</span>
-                  <p className="text-sm text-gray-900 leading-relaxed font-bold">{activeRec.suggestedAction}</p>
+                  <p className="text-sm text-gray-900 leading-relaxed font-bold whitespace-pre-line">{activeRec.suggestedAction}</p>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Expected Benefit</span>

@@ -1,26 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, ReferenceArea, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { BrainCircuit, Info, Loader2, AlertTriangle, History, Radio, Square } from 'lucide-react';
 import {
-  fetchBatches, fetchTimeline, fetchParameterConfig, fetchGoldenEnvelope, GOLDEN_BATCH_ID,
+  Info, Loader2, AlertTriangle, Square, Bot,
+  CheckCircle2, XCircle, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp,
+} from 'lucide-react';
+import {
+  fetchTimeline, fetchParameterConfig, fetchGoldenEnvelope, GOLDEN_BATCH_ID,
   fetchRunningBatches, fetchRunningBatchTelemetry, stopRunningBatch,
 } from '../lib/api';
 import type {
-  BatchSummary, TimelineResponse, ParameterConfigEntry, GoldenEnvelopePoint,
+  TimelineResponse, ParameterConfigEntry, GoldenEnvelopePoint,
   RunningBatchSummary, RunningBatchTelemetryResponse,
 } from '../lib/api';
 
 const WARNING_MARGIN_FRACTION = 0.15;
 const LIVE_POLL_INTERVAL_MS = 3000;
 
-type Mode = 'running' | 'completed';
+type Status = 'normal' | 'warning' | 'critical';
 
-// Shared shape both modes normalize into, so the rest of this component
-// (cards, chart, stats) has exactly one code path regardless of data source.
-// The running batch is treated as one continuous process end to end - no
-// manufacturing-phase concept is surfaced here (the simulator still uses
-// phases internally to generate realistic values, but this page doesn't
-// know or care about that).
+// This page only ever shows running batches now (Completed Batches mode was
+// removed as redundant - Batch Explorer already covers browsing finished
+// batches, and this page's whole point is watching something live).
 interface NormalizedPoint {
   elapsed_minutes: number;
   temperature: number;
@@ -40,11 +40,9 @@ interface ParamCard {
   // just one stage of it, which is what replacing the fixed band fixes.
   lowerLimit: number;
   upperLimit: number;
-  status: 'normal' | 'warning' | 'critical';
+  status: Status;
   // Live ML forecast for this parameter, 30 minutes ahead - undefined until
-  // the running batch has 30+ minutes of history. Same trained model and CI
-  // approach as Deviation Prediction, just no actual/correctness fields:
-  // there's no ground truth yet for a batch that hasn't finished.
+  // the running batch has 30+ minutes of history.
   prediction?: {
     predicted: number;
     // Golden batch's own reading 30 minutes from now (not "now") - the
@@ -56,23 +54,25 @@ interface ParamCard {
   };
 }
 
-const classifyStatus = (value: number, lo: number, hi: number): 'normal' | 'warning' | 'critical' => {
+const classifyStatus = (value: number, lo: number, hi: number): Status => {
   if (value < lo || value > hi) return 'critical';
   const margin = (hi - lo) * WARNING_MARGIN_FRACTION;
   if (value < lo + margin || value > hi - margin) return 'warning';
   return 'normal';
 };
 
-const STATUS_DOT: Record<ParamCard['status'], string> = {
+const SEVERITY_RANK: Record<Status, number> = { normal: 0, warning: 1, critical: 2 };
+
+const STATUS_DOT: Record<Status, string> = {
   normal: 'bg-green-500',
   warning: 'bg-yellow-500',
   critical: 'bg-red-500',
 };
 
-const SCENARIO_BADGE: Record<string, string> = {
-  Normal: 'bg-emerald-100 text-emerald-800',
-  Warning: 'bg-amber-100 text-amber-800',
-  Critical: 'bg-red-100 text-red-800',
+const HEADLINE_STYLE: Record<Status, { bg: string; border: string; text: string; label: string; Icon: typeof CheckCircle2 }> = {
+  normal: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', label: 'On Track', Icon: CheckCircle2 },
+  warning: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', label: 'Needs Attention', Icon: AlertTriangle },
+  critical: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', label: 'Deviating', Icon: XCircle },
 };
 
 const PREDICTED_ALERT_BADGE: Record<string, string> = {
@@ -81,24 +81,42 @@ const PREDICTED_ALERT_BADGE: Record<string, string> = {
   Critical: 'bg-red-50 text-red-700 border-red-200',
 };
 
-export default function ProcessMonitoring() {
-  const [mode, setMode] = useState<Mode>('running');
+const AGENT_STATUS_BADGE: Record<Status, string> = {
+  normal: 'bg-emerald-100 text-emerald-800',
+  warning: 'bg-amber-100 text-amber-800',
+  critical: 'bg-red-100 text-red-800',
+};
 
-  // --- Running-batch mode state ---
+const CONFIDENCE_STYLE: Record<string, string> = {
+  High: 'text-emerald-700',
+  Medium: 'text-amber-700',
+  Low: 'text-gray-500',
+};
+
+const TRIGGER_LABEL: Record<string, string> = {
+  current: 'Active deviation',
+  predicted: 'Forecasted deviation',
+  both: 'Active + forecasted deviation',
+};
+
+// Urgency is the LLM reasoning layer's operational-priority call (Azure
+// OpenAI, synthesized from the deterministic evidence) - most-to-least
+// urgent, styled to read at a glance.
+const URGENCY_STYLE: Record<string, string> = {
+  'Immediate Action Required': 'bg-red-600 text-white',
+  'Action Recommended Soon': 'bg-amber-500 text-white',
+  'Monitor Closely': 'bg-amber-100 text-amber-800',
+  'Informational Only': 'bg-gray-100 text-gray-600',
+};
+
+export default function ProcessMonitoring() {
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+
   const [runningBatches, setRunningBatches] = useState<RunningBatchSummary[]>([]);
   const [runningBatchesLoading, setRunningBatchesLoading] = useState(true);
   const [runningBatchesError, setRunningBatchesError] = useState<string | null>(null);
   const [selectedRunningBatchId, setSelectedRunningBatchId] = useState<string | null>(null);
   const [runningTelemetry, setRunningTelemetry] = useState<RunningBatchTelemetryResponse | null>(null);
-
-  // --- Completed-batch mode state (existing behavior, unchanged) ---
-  const [batches, setBatches] = useState<BatchSummary[]>([]);
-  const [batchesLoading, setBatchesLoading] = useState(true);
-  const [batchesError, setBatchesError] = useState<string | null>(null);
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
-  const [timelineLoading, setTimelineLoading] = useState(false);
-  const [timelineError, setTimelineError] = useState<string | null>(null);
 
   // --- Shared reference data ---
   const [paramConfig, setParamConfig] = useState<ParameterConfigEntry[]>([]);
@@ -106,7 +124,6 @@ export default function ProcessMonitoring() {
   const [goldenEnvelope, setGoldenEnvelope] = useState<GoldenEnvelopePoint[]>([]);
   const [activeParamKey, setActiveParamKey] = useState('temperature');
 
-  const selectedBatch = batches.find((b) => b.batch_id === selectedBatchId) ?? null;
   const selectedRunningBatch = runningBatches.find((b) => b.running_batch_id === selectedRunningBatchId) ?? null;
 
   useEffect(() => {
@@ -140,7 +157,7 @@ export default function ProcessMonitoring() {
 
   // Poll live telemetry for the selected running batch.
   useEffect(() => {
-    if (mode !== 'running' || !selectedRunningBatchId) return;
+    if (!selectedRunningBatchId) return;
     let cancelled = false;
 
     const poll = () => {
@@ -162,50 +179,7 @@ export default function ProcessMonitoring() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [mode, selectedRunningBatchId]);
-
-  // Historical batches - existing behavior, unchanged.
-  useEffect(() => {
-    let cancelled = false;
-    setBatchesLoading(true);
-    setBatchesError(null);
-    fetchBatches()
-      .then((data) => {
-        if (cancelled) return;
-        setBatches(data);
-        setSelectedBatchId((prev) => prev ?? (data.length > 0 ? data[0].batch_id : null));
-      })
-      .catch((err) => {
-        if (!cancelled) setBatchesError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setBatchesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (mode !== 'completed' || !selectedBatchId) return;
-    let cancelled = false;
-    setTimelineLoading(true);
-    fetchTimeline(selectedBatchId)
-      .then((data) => {
-        if (cancelled) return;
-        setTimeline(data);
-        setTimelineError(null);
-      })
-      .catch((err) => {
-        if (!cancelled) setTimelineError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setTimelineLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, selectedBatchId]);
+  }, [selectedRunningBatchId]);
 
   const goldenPointAt = (elapsedMinutes: number) => {
     if (!goldenTimeline || goldenTimeline.points.length === 0) return undefined;
@@ -223,12 +197,7 @@ export default function ProcessMonitoring() {
     return elapsedMinutes > maxEnv.elapsed_minutes ? maxEnv : goldenEnvelope[0];
   };
 
-  const points: NormalizedPoint[] = useMemo(() => {
-    if (mode === 'running') {
-      return runningTelemetry?.points ?? [];
-    }
-    return timeline?.points ?? [];
-  }, [mode, runningTelemetry, timeline]);
+  const points: NormalizedPoint[] = useMemo(() => runningTelemetry?.points ?? [], [runningTelemetry]);
 
   const latestPoint = points.length > 0 ? points[points.length - 1] : null;
 
@@ -255,9 +224,7 @@ export default function ProcessMonitoring() {
       const effectiveLower = Math.round((golden + lowerOffset) * 100) / 100;
       const effectiveUpper = Math.round((golden + upperOffset) * 100) / 100;
 
-      const livePred = mode === 'running'
-        ? runningTelemetry?.prediction?.parameters.find((p) => p.key === cfg.key)
-        : undefined;
+      const livePred = runningTelemetry?.prediction?.parameters.find((p) => p.key === cfg.key);
       const goldenFuture = goldenAt30 ? (goldenAt30[cfg.key as keyof typeof goldenAt30] as number) : undefined;
       return {
         key: cfg.key,
@@ -274,7 +241,7 @@ export default function ProcessMonitoring() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestPoint, paramConfig, goldenTimeline, goldenEnvelope, mode, runningTelemetry]);
+  }, [latestPoint, paramConfig, goldenTimeline, goldenEnvelope, runningTelemetry]);
 
   useEffect(() => {
     if (paramCards.length > 0 && !paramCards.find((p) => p.key === activeParamKey)) {
@@ -283,6 +250,47 @@ export default function ProcessMonitoring() {
   }, [paramCards, activeParamKey]);
 
   const activeParamObj = paramCards.find((p) => p.key === activeParamKey) ?? paramCards[0];
+
+  // Process Parameter Deviation Agent output for the currently-selected parameter.
+  const activeAssessment = runningTelemetry?.assessments.find((a) => a.key === activeParamKey);
+
+  const assessmentAlertStatus: Status = activeAssessment
+    ? (SEVERITY_RANK[activeAssessment.current_status] >= SEVERITY_RANK[(activeAssessment.predicted_status ?? 'normal') as Status]
+      ? activeAssessment.current_status
+      : (activeAssessment.predicted_status as Status))
+    : 'normal';
+
+  // Worst status across every parameter, current AND predicted - the single
+  // headline number a presenter points to first, before drilling into any
+  // one parameter's detail.
+  const overallStatus: Status = useMemo(() => {
+    let worst: Status = 'normal';
+    for (const p of paramCards) {
+      if (SEVERITY_RANK[p.status] > SEVERITY_RANK[worst]) worst = p.status;
+      if (p.prediction) {
+        const predStatus = p.prediction.alertLevel.toLowerCase() as Status;
+        if (SEVERITY_RANK[predStatus] > SEVERITY_RANK[worst]) worst = predStatus;
+      }
+    }
+    return worst;
+  }, [paramCards]);
+
+  const headlineMessage = useMemo(() => {
+    if (paramCards.length === 0) return '';
+    if (overallStatus === 'normal') return 'All parameters are tracking close to the ideal recipe.';
+    const worst = paramCards.find((p) => p.status !== 'normal')
+      ?? paramCards.find((p) => p.prediction && p.prediction.alertLevel !== 'Normal');
+    if (!worst) return '';
+    const isOffNow = worst.status !== 'normal';
+    if (overallStatus === 'critical') {
+      return isOffNow
+        ? `${worst.label} has moved outside the expected range for this point in the batch.`
+        : `${worst.label} looks fine right now, but is predicted to move outside the expected range within 30 minutes.`;
+    }
+    return isOffNow
+      ? `${worst.label} is drifting from the ideal profile and is worth keeping an eye on.`
+      : `${worst.label} is expected to start drifting from the ideal profile within the next 30 minutes.`;
+  }, [paramCards, overallStatus]);
 
   const chartData = useMemo(() => {
     return points.map((p) => {
@@ -313,18 +321,6 @@ export default function ProcessMonitoring() {
     };
   }, [points, activeParamKey]);
 
-  const getAiMessage = () => {
-    if (!activeParamObj) return '';
-    const diff = (activeParamObj.current - activeParamObj.golden).toFixed(2);
-    const sign = Number(diff) > 0 ? '+' : '';
-    if (activeParamObj.status === 'normal') {
-      return `${activeParamObj.label} is operating normally with a deviation of ${sign}${diff} ${activeParamObj.unit} from the golden batch reference at this point in the run.`;
-    } else if (activeParamObj.status === 'warning') {
-      return `${activeParamObj.label} is drifting from the golden reference (${sign}${diff} ${activeParamObj.unit}) and is nearing the control limits. Close observation is recommended.`;
-    }
-    return `Critical deviation detected in ${activeParamObj.label} (${sign}${diff} ${activeParamObj.unit} from golden). Process has exceeded expected bounds.`;
-  };
-
   const handleStop = () => {
     if (!selectedRunningBatchId) return;
     stopRunningBatch(selectedRunningBatchId).then((updated) => {
@@ -332,31 +328,7 @@ export default function ProcessMonitoring() {
     });
   };
 
-  const activeLoading = mode === 'running' ? runningBatchesLoading : batchesLoading;
-  const activeError = mode === 'running' ? runningBatchesError : batchesError;
-
-  const ModeToggle = (
-    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-      <button
-        onClick={() => setMode('running')}
-        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
-          mode === 'running' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'
-        }`}
-      >
-        <Radio size={13} /> Running Batches
-      </button>
-      <button
-        onClick={() => setMode('completed')}
-        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
-          mode === 'completed' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500 hover:text-gray-700'
-        }`}
-      >
-        <History size={13} /> Completed Batches
-      </button>
-    </div>
-  );
-
-  if (activeLoading) {
+  if (runningBatchesLoading) {
     return (
       <div className="max-w-7xl mx-auto flex flex-col items-center justify-center h-96 gap-3 text-gray-500">
         <Loader2 className="animate-spin" size={28} />
@@ -365,24 +337,23 @@ export default function ProcessMonitoring() {
     );
   }
 
-  if (activeError) {
+  if (runningBatchesError) {
     return (
       <div className="max-w-7xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-xl p-6 flex items-start gap-3">
           <AlertTriangle className="text-red-500 mt-0.5 shrink-0" size={20} />
           <div>
             <h2 className="text-sm font-bold text-red-800">Could not load batches</h2>
-            <p className="text-xs text-red-700 mt-1 leading-relaxed">{activeError}</p>
+            <p className="text-xs text-red-700 mt-1 leading-relaxed">{runningBatchesError}</p>
           </div>
         </div>
       </div>
     );
   }
 
-  if (mode === 'running' && runningBatches.length === 0) {
+  if (runningBatches.length === 0) {
     return (
       <div className="max-w-7xl mx-auto space-y-4">
-        {ModeToggle}
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-500">
           No running batches right now.
         </div>
@@ -390,145 +361,117 @@ export default function ProcessMonitoring() {
     );
   }
 
-  if (mode === 'completed' && batches.length === 0) {
-    return (
-      <div className="max-w-7xl mx-auto space-y-4">
-        {ModeToggle}
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center text-sm text-gray-500">
-          No batches available.
-        </div>
-      </div>
-    );
-  }
+  const headline = HEADLINE_STYLE[overallStatus];
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Process Monitoring</h1>
-          {mode === 'running' ? (
-            <>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-sm text-gray-500">Live simulated telemetry for</p>
-                <select
-                  value={selectedRunningBatchId ?? ''}
-                  onChange={(e) => setSelectedRunningBatchId(e.target.value)}
-                  className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                >
-                  {runningBatches.map((b) => (
-                    <option key={b.running_batch_id} value={b.running_batch_id}>
-                      {b.running_batch_id} — {b.scenario_profile} ({b.status})
-                    </option>
-                  ))}
-                </select>
-                {selectedRunningBatch && <p className="text-sm text-gray-500">at {selectedRunningBatch.plant}</p>}
-              </div>
-              {selectedRunningBatch && (
-                <p className="text-xs text-gray-400 mt-1 flex items-center font-medium gap-1.5 flex-wrap">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Simulated live feed
-                  <span>· {selectedRunningBatch.elapsed_minutes} / {selectedRunningBatch.target_duration_minutes} min</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${SCENARIO_BADGE[selectedRunningBatch.scenario_profile] ?? 'bg-gray-100 text-gray-700'}`}>
-                    {selectedRunningBatch.scenario_profile} scenario
-                  </span>
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-sm text-gray-500">Real recorded parameters and control charting for</p>
-                <select
-                  value={selectedBatchId ?? ''}
-                  onChange={(e) => setSelectedBatchId(e.target.value)}
-                  className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                >
-                  {batches.map((b) => (
-                    <option key={b.batch_id} value={b.batch_id}>{b.batch_id}</option>
-                  ))}
-                </select>
-                {selectedBatch && <p className="text-sm text-gray-500">at {selectedBatch.plant}</p>}
-              </div>
-              <p className="text-xs text-gray-400 mt-1 flex items-center font-medium gap-1">
-                <History size={12} /> Historical batch record (not a live feed) — {timeline?.batch_duration_minutes ?? '—'} min total
-              </p>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {mode === 'running' && selectedRunningBatch?.status === 'Running' && (
-            <button
-              onClick={handleStop}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors"
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm text-gray-500">Live simulated telemetry for</p>
+            <select
+              value={selectedRunningBatchId ?? ''}
+              onChange={(e) => setSelectedRunningBatchId(e.target.value)}
+              className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
-              <Square size={12} /> Stop batch
-            </button>
+              {/* scenario_profile deliberately not shown here - it's a
+                  simulation input (what fault was scripted in before the
+                  batch started), not something an operator would know in
+                  advance. Showing it would spoil what the Deviation Agent
+                  is meant to discover from telemetry as it happens. */}
+              {runningBatches.map((b) => (
+                <option key={b.running_batch_id} value={b.running_batch_id}>
+                  {b.running_batch_id} ({b.status})
+                </option>
+              ))}
+            </select>
+            {selectedRunningBatch && <p className="text-sm text-gray-500">at {selectedRunningBatch.plant}</p>}
+          </div>
+          {selectedRunningBatch && (
+            <p className="text-xs text-gray-400 mt-1 flex items-center font-medium gap-1.5 flex-wrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Simulated live feed
+              <span>· {selectedRunningBatch.elapsed_minutes} / {selectedRunningBatch.target_duration_minutes} min</span>
+            </p>
           )}
-          {ModeToggle}
         </div>
+        {selectedRunningBatch?.status === 'Running' && (
+          <button
+            onClick={handleStop}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors self-start"
+          >
+            <Square size={12} /> Stop batch
+          </button>
+        )}
       </div>
 
-      {mode === 'completed' && timelineError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertTriangle className="text-red-500 mt-0.5 shrink-0" size={18} />
-          <p className="text-xs text-red-700 leading-relaxed">{timelineError}</p>
-        </div>
-      )}
+      <div>
+        {/* Headline batch health - the one thing to point at first */}
+        {paramCards.length > 0 && (
+          <div className={`rounded-xl border p-5 flex items-center gap-4 mb-6 ${headline.bg} ${headline.border}`}>
+            <headline.Icon size={32} className={headline.text} />
+            <div>
+              <div className={`text-lg font-bold ${headline.text}`}>{headline.label}</div>
+              <p className={`text-sm ${headline.text} opacity-90`}>{headlineMessage}</p>
+            </div>
+          </div>
+        )}
 
-      <div className={mode === 'completed' && timelineLoading ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {paramCards.map((param) => {
             const dev = param.current - param.golden;
+            // Dot is current status ONLY - the "In 30 min" row below already
+            // carries the predicted value and predicted severity, so the dot
+            // deliberately doesn't also try to reflect the forecast. Keeps
+            // the two questions separate: dot answers "how is it now?",
+            // the row answers "what's expected next?" - not one indicator
+            // trying to answer both.
+            const isSelected = param.key === activeParamKey;
             return (
-              <div key={param.key} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 relative overflow-hidden">
-                <div className="flex justify-between items-start mb-4">
-                  <span className="text-sm font-medium text-gray-500">{param.label}</span>
-                  <span className={`w-3 h-3 rounded-full ${STATUS_DOT[param.status]}`}></span>
-                </div>
-                <div className="text-2xl font-bold text-gray-900 mb-1">{param.current} {param.unit}</div>
-                <div className="text-sm text-gray-500 flex justify-between">
-                  <span>Golden: {param.golden}</span>
-                  <span className={`font-medium ${dev > 0 ? 'text-rose-600' : dev < 0 ? 'text-indigo-600' : 'text-gray-600'}`}>
-                    Dev: {dev > 0 ? '+' : ''}{dev.toFixed(2)}
+            <button
+              key={param.key}
+              type="button"
+              onClick={() => setActiveParamKey(param.key)}
+              className={`w-full text-left bg-white rounded-lg shadow-sm border p-5 relative overflow-hidden transition-all hover:shadow-md ${
+                isSelected ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200 hover:border-indigo-200'
+              }`}
+            >
+              <div className="flex justify-between items-start mb-1">
+                <span className="text-sm font-medium text-gray-500">{param.label}</span>
+                <span className={`w-3 h-3 rounded-full ${STATUS_DOT[param.status]}`}></span>
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{param.current} {param.unit}</div>
+              <div className="mt-2 text-sm text-gray-500 flex justify-between">
+                <span>Gold: {param.golden}</span>
+                <span className={`font-medium ${dev > 0 ? 'text-rose-600' : dev < 0 ? 'text-indigo-600' : 'text-gray-600'}`}>
+                  Dev: {dev > 0 ? '+' : ''}{dev.toFixed(2)}
+                </span>
+              </div>
+
+              {param.prediction ? (
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-gray-500 font-medium flex items-center gap-1 shrink-0">
+                    {param.prediction.predicted > param.current
+                      ? <ArrowUp size={12} className="text-rose-500" />
+                      : param.prediction.predicted < param.current
+                      ? <ArrowDown size={12} className="text-indigo-500" />
+                      : <Minus size={12} className="text-gray-400" />}
+                    In 30 min
+                  </span>
+                  <span className="text-sm font-bold text-gray-800">{param.prediction.predicted} {param.unit}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${PREDICTED_ALERT_BADGE[param.prediction.alertLevel]}`}>
+                    {param.prediction.alertLevel}
                   </span>
                 </div>
-                {mode === 'running' && (
-                  param.prediction ? (
-                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
-                      <div className="flex justify-between items-baseline">
-                        <span className="text-[10px] text-gray-400 uppercase font-semibold">Predicted (+30m)</span>
-                        <span className="text-sm font-bold text-indigo-600">{param.prediction.predicted} {param.unit}</span>
-                      </div>
-                      {param.prediction.goldenFuture !== undefined && (
-                        <div className="flex justify-between items-baseline">
-                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Golden (+30m)</span>
-                          <span className="text-[11px] font-mono text-gray-500">
-                            {param.prediction.goldenFuture}
-                            {' · '}
-                            <span className={
-                              param.prediction.predicted - param.prediction.goldenFuture > 0 ? 'text-rose-600'
-                                : param.prediction.predicted - param.prediction.goldenFuture < 0 ? 'text-indigo-600'
-                                : 'text-gray-500'
-                            }>
-                              Dev: {param.prediction.predicted - param.prediction.goldenFuture > 0 ? '+' : ''}
-                              {(param.prediction.predicted - param.prediction.goldenFuture).toFixed(2)}
-                            </span>
-                          </span>
-                        </div>
-                      )}
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${PREDICTED_ALERT_BADGE[param.prediction.alertLevel]}`}>
-                        Predicted: {param.prediction.alertLevel}
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <span className="text-[10px] text-gray-400 italic">
-                        Forecast available once 30 min of history exist ({selectedRunningBatch?.elapsed_minutes ?? 0}/30 min)
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
+              ) : (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <span className="text-[10px] text-gray-400 italic">
+                    Forecast available once 30 min of history exist ({selectedRunningBatch?.elapsed_minutes ?? 0}/30 min)
+                  </span>
+                </div>
+              )}
+            </button>
             );
           })}
         </div>
@@ -537,21 +480,19 @@ export default function ProcessMonitoring() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 flex flex-col">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-center mb-2">
                   <h2 className="text-lg font-semibold text-gray-800">Parameter Trend Comparison</h2>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Parameter:</span>
-                    <select
-                      value={activeParamKey}
-                      onChange={(e) => setActiveParamKey(e.target.value)}
-                      className="bg-gray-50 border border-gray-200 text-sm text-gray-800 rounded-md py-1.5 px-3 outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                    >
-                      {paramCards.map((p) => (
-                        <option key={p.key} value={p.key}>{p.label}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Parameter is picked by clicking a card above - no
+                      separate selector here, just a label confirming which
+                      one this chart (and Technical Details, and Agent
+                      Assessment) is currently showing. */}
+                  <span className="bg-indigo-50 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded-md border border-indigo-100">
+                    {activeParamObj.label}
+                  </span>
                 </div>
+                <p className="text-xs text-gray-400 mb-4">
+                  The dashed gold line is what an ideal batch looked like at this same point in time.
+                </p>
                 <div className="h-80 w-full relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
@@ -573,51 +514,168 @@ export default function ProcessMonitoring() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 flex flex-col">
-                <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2 flex items-center gap-2">
-                  <Info size={16} className="text-blue-500" /> {activeParamObj.label} Statistics ({mode === 'running' ? 'Live Readings So Far' : 'Full Batch Record'})
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
-                    <span className="text-xs text-gray-500 mb-1">Average</span>
-                    <span className="font-semibold text-gray-900">{stats.avg}</span>
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <button
+                  onClick={() => setShowTechnicalDetails((v) => !v)}
+                  className="w-full flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                >
+                  <span className="flex items-center gap-2">
+                    <Info size={14} className="text-blue-500" /> Technical Details ({activeParamObj.label})
+                  </span>
+                  {showTechnicalDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+                {showTechnicalDetails && (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-gray-100">
+                    <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
+                      <span className="text-xs text-gray-500 mb-1">Average</span>
+                      <span className="font-semibold text-gray-900">{stats.avg}</span>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
+                      <span className="text-xs text-gray-500 mb-1">Std Dev</span>
+                      <span className="font-semibold text-gray-900">{stats.stdDev}</span>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
+                      <span className="text-xs text-gray-500 mb-1">Variance</span>
+                      <span className="font-semibold text-gray-900">{stats.variance}</span>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
+                      <span className="text-xs text-gray-500 mb-1">Minimum</span>
+                      <span className="font-semibold text-gray-900">{stats.min}</span>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
+                      <span className="text-xs text-gray-500 mb-1">Maximum</span>
+                      <span className="font-semibold text-gray-900">{stats.max}</span>
+                    </div>
                   </div>
-                  <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
-                    <span className="text-xs text-gray-500 mb-1">Std Dev</span>
-                    <span className="font-semibold text-gray-900">{stats.stdDev}</span>
-                  </div>
-                  <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
-                    <span className="text-xs text-gray-500 mb-1">Variance</span>
-                    <span className="font-semibold text-gray-900">{stats.variance}</span>
-                  </div>
-                  <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
-                    <span className="text-xs text-gray-500 mb-1">Minimum</span>
-                    <span className="font-semibold text-gray-900">{stats.min}</span>
-                  </div>
-                  <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
-                    <span className="text-xs text-gray-500 mb-1">Maximum</span>
-                    <span className="font-semibold text-gray-900">{stats.max}</span>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
-            <div className="bg-blue-50/50 rounded-lg shadow-sm border border-blue-100 p-6 h-fit">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
-                <BrainCircuit className="text-blue-600" /> AI Observation
-              </h2>
-              <div className={`p-4 rounded-xl border ${activeParamObj.status === 'normal' ? 'bg-white border-gray-200 text-gray-700' : activeParamObj.status === 'warning' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                <p className="text-sm leading-relaxed font-medium">
-                  {getAiMessage()}
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-widest pt-4 border-t border-gray-100/30">
-                  Expected Range (vs. golden, this minute):
-                  <span className="bg-white/50 px-2 py-0.5 rounded border border-gray-200/50">
-                    {activeParamObj.lowerLimit} - {activeParamObj.upperLimit} {activeParamObj.unit}
+            {activeAssessment ? (
+              <div className="bg-blue-50/50 rounded-lg shadow-sm border border-blue-100 p-6 h-fit">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Bot className="text-blue-600" /> Agent Assessment
+                  </h2>
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${AGENT_STATUS_BADGE[assessmentAlertStatus]}`}>
+                    {assessmentAlertStatus}
                   </span>
                 </div>
+
+                {activeAssessment.trigger_type && (
+                  <div className="mb-3 text-[11px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-block">
+                    {TRIGGER_LABEL[activeAssessment.trigger_type]}
+                  </div>
+                )}
+
+                {/* 1-2: what triggered + severity, synthesized by the LLM
+                    reasoning layer into one sentence (alert_summary is
+                    generated alongside urgency/root-cause/action, so this
+                    line is never a bare template). */}
+                {activeAssessment.alert_summary && (
+                  <p className="text-sm font-semibold text-gray-900 leading-relaxed mb-4">{activeAssessment.alert_summary}</p>
+                )}
+
+                {/* 4: operational urgency - the agent's prioritization call, most prominent element after the summary. */}
+                {activeAssessment.urgency && (
+                  <div className="mb-4">
+                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Urgency</div>
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${URGENCY_STYLE[activeAssessment.urgency]}`}>
+                      {activeAssessment.urgency}
+                    </span>
+                  </div>
+                )}
+
+                {/* 3: why the alert fired, using only the deterministic evidence. */}
+                {activeAssessment.trigger_explanation && (
+                  <div className="mb-4 pt-4 border-t border-blue-100">
+                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Why This Alert Fired</div>
+                    <p className="text-sm text-gray-700 leading-relaxed">{activeAssessment.trigger_explanation}</p>
+                  </div>
+                )}
+
+                <div className="mb-4 pt-4 border-t border-blue-100">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Current Deviation</div>
+                  <p className="text-sm text-gray-700 leading-relaxed">{activeAssessment.current_observation}</p>
+                </div>
+
+                {/* 5: time remaining + what's at stake if unaddressed. */}
+                <div className="mb-4 pt-4 border-t border-blue-100">
+                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Predicted Deviation</div>
+                  {activeAssessment.predicted_observation ? (
+                    <>
+                      <p className="text-sm text-gray-700 leading-relaxed">{activeAssessment.predicted_observation}</p>
+                      {activeAssessment.time_to_breach_minutes != null && (
+                        <p className="text-xs text-amber-700 font-semibold mt-1.5">
+                          Estimated time to breach: ~{activeAssessment.time_to_breach_minutes} min
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">Forecast available once 30 min of history exist.</p>
+                  )}
+                  {activeAssessment.operational_impact && (
+                    <p className="text-sm text-gray-600 leading-relaxed mt-2 italic">{activeAssessment.operational_impact}</p>
+                  )}
+                </div>
+
+                {/* 6: concrete action, ahead of root cause - the operator should
+                    know what to do before drilling into why, per the agent's
+                    alert-first design. */}
+                {activeAssessment.recommended_action && (
+                  <div className="mb-4 pt-4 border-t border-blue-100">
+                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Recommended Action</div>
+                    {/* whitespace-pre-line: the agent may return this as up to
+                        3 short bullet lines separated by newlines - without
+                        this, HTML would collapse them onto one run-on line. */}
+                    <p className="text-sm text-gray-800 font-medium leading-relaxed whitespace-pre-line">{activeAssessment.recommended_action}</p>
+                  </div>
+                )}
+
+                {/* 7: root cause, synthesized from the ranked historical
+                    fault-signature candidates - states plainly when nothing
+                    fits well rather than forcing a diagnosis. */}
+                {activeAssessment.likely_root_cause && (
+                  <div className="mb-4 pt-4 border-t border-blue-100">
+                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Likely Root Cause</div>
+                    <p className="text-sm text-gray-700 leading-relaxed">{activeAssessment.likely_root_cause}</p>
+                  </div>
+                )}
+
+                {activeAssessment.confidence && (
+                  <div className="pt-4 border-t border-blue-100 flex items-center justify-between text-xs">
+                    <span className="font-bold text-gray-400 uppercase tracking-wider">Confidence</span>
+                    <span className={`font-bold ${CONFIDENCE_STYLE[activeAssessment.confidence]}`}>{activeAssessment.confidence}</span>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="bg-blue-50/50 rounded-lg shadow-sm border border-blue-100 p-6 h-fit">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-4">
+                  <Info className="text-blue-600" /> What This Means
+                </h2>
+                <div className={`p-4 rounded-xl border ${activeParamObj.status === 'normal' ? 'bg-white border-gray-200 text-gray-700' : activeParamObj.status === 'warning' ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                  <p className="text-sm leading-relaxed font-medium">
+                    {(() => {
+                      const diff = (activeParamObj.current - activeParamObj.golden).toFixed(2);
+                      const sign = Number(diff) > 0 ? '+' : '';
+                      if (activeParamObj.status === 'normal') {
+                        return `${activeParamObj.label} is running close to the ideal profile (${sign}${diff} ${activeParamObj.unit} off) at this point in the batch.`;
+                      } else if (activeParamObj.status === 'warning') {
+                        return `${activeParamObj.label} is drifting from the ideal profile (${sign}${diff} ${activeParamObj.unit}) and is nearing the edge of the expected range.`;
+                      }
+                      return `${activeParamObj.label} has moved outside the expected range (${sign}${diff} ${activeParamObj.unit} from ideal).`;
+                    })()}
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-widest pt-4 border-t border-gray-100/30">
+                    Expected range right now:
+                    <span className="bg-white/50 px-2 py-0.5 rounded border border-gray-200/50">
+                      {activeParamObj.lowerLimit} - {activeParamObj.upperLimit} {activeParamObj.unit}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

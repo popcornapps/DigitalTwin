@@ -215,12 +215,72 @@ export interface LivePrediction {
   parameters: LiveParameterPrediction[];
 }
 
+export type AgentUrgency = 'Immediate Action Required' | 'Action Recommended Soon' | 'Monitor Closely' | 'Informational Only';
+
+// Process Parameter Deviation Agent's per-parameter output - Current and
+// Predicted are kept as separate fields throughout (a parameter can be fine
+// now but forecast to breach soon, or vice versa). Detect/Project
+// (current_status/predicted_status/time_to_breach_minutes/confidence) are
+// deterministic; alert_summary/trigger_explanation/urgency/likely_root_cause/
+// recommended_action/operational_impact are the LLM reasoning layer's
+// synthesized output (Azure OpenAI, with a deterministic fallback), all null
+// until trigger_type is set.
+export interface ParameterAssessment {
+  key: string;
+  current_status: 'normal' | 'warning' | 'critical';
+  current_observation: string;
+  predicted_status: 'normal' | 'warning' | 'critical' | null;
+  predicted_observation: string | null;
+  time_to_breach_minutes: number | null;
+  confidence: 'High' | 'Medium' | 'Low' | null;
+  likely_root_cause: string | null;
+  recommended_action: string | null;
+  trigger_type: 'current' | 'predicted' | 'both' | null;
+  alert_summary: string | null;
+  trigger_explanation: string | null;
+  urgency: AgentUrgency | null;
+  operational_impact: string | null;
+}
+
 export interface RunningBatchTelemetryResponse {
   batch: RunningBatchSummary;
   points: LiveTelemetryPoint[];
   // null until 30+ minutes of history exist for this batch.
   prediction: LivePrediction | null;
+  assessments: ParameterAssessment[];
 }
+
+// --- Process Parameter Deviation Agent alerts (feeds AI Review Desk) ---
+
+export interface DeviationAlert {
+  alert_id: string;
+  running_batch_id: string;
+  plant: string;
+  parameter: string;
+  parameter_label: string;
+  trigger_type: 'current' | 'predicted' | 'both';
+  severity: 'Warning' | 'Critical';
+  detected_at_elapsed_minutes: number;
+  created_at: string;
+  observation: string;
+  predicted_observation: string | null;
+  time_to_breach_minutes: number | null;
+  confidence: 'High' | 'Medium' | 'Low' | null;
+  likely_root_cause: string | null;
+  recommended_action: string | null;
+  status: 'Open' | 'Resolved';
+  resolved_at_elapsed_minutes: number | null;
+  // LLM reasoning layer output, persisted on the alert at creation/material-
+  // change time - the same explanation shown in Process Monitoring stays
+  // stable here even as the live batch continues past that point.
+  alert_summary: string | null;
+  trigger_explanation: string | null;
+  urgency: AgentUrgency | null;
+  operational_impact: string | null;
+}
+
+export const fetchAlerts = (status?: 'Open' | 'Resolved'): Promise<DeviationAlert[]> =>
+  fetchJson(`/alerts${status ? `?status=${status}` : ''}`);
 
 export const fetchRunningBatches = (): Promise<RunningBatchSummary[]> => fetchJson('/live-batches');
 

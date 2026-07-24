@@ -15,15 +15,15 @@ import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterCon
 export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages: string[] }> = {
   'Plant Manager': {
     landingPage: '/dashboard',
-    visiblePages: ['/dashboard', '/batch-explorer', '/golden-batch', '/deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/dashboard', '/batch-explorer', '/golden-batch', '/review-desk', '/ai-copilot', '/settings']
   },
   'Plant Operator': {
     landingPage: '/process-monitoring',
-    visiblePages: ['/process-monitoring', '/batch-explorer', '/deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/process-monitoring', '/batch-explorer', '/review-desk', '/ai-copilot', '/settings']
   },
   'Quality Engineer': {
     landingPage: '/anomaly-intelligence',
-    visiblePages: ['/anomaly-intelligence', '/quality-workbench', '/batch-explorer', '/deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/anomaly-intelligence', '/quality-workbench', '/batch-explorer', '/review-desk', '/ai-copilot', '/settings']
   }
 };
 
