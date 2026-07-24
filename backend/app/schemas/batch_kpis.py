@@ -15,6 +15,12 @@ class BatchKPIs(BaseModel):
     # None for batches that never left their control band (Normal batches, mostly) -
     # see the batch_kpis generation script for how this is back-derived.
     fault_onset_elapsed_minutes: float | None
+    # Real per-batch outcome facts (also stored on batches.csv itself) - yield_pct/
+    # quality_score_pct/total_energy_kwh below are all derived from these, not
+    # independent draws. See generate_batch_kpis.py for the full derivation chain.
+    theoretical_output_kg: float
+    actual_output_kg: float
+    assay_pct: float
     yield_pct: float
     quality_score_pct: float
     oee_availability_pct: float
