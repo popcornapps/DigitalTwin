@@ -255,7 +255,7 @@ export const getMockAiChat = (batch: string, persona: string = 'Plant Manager') 
   ];
 };
 
-export type RecommendationStatus = 'New' | 'Pending' | 'Acknowledged' | 'Rejected';
+export type RecommendationStatus = 'New' | 'Pending' | 'Acknowledged' | 'Rejected' | 'Resolved';
 export type RecommendationPriority = 'Critical' | 'Medium' | 'Low';
 
 export interface AIRecommendation {
@@ -264,6 +264,11 @@ export interface AIRecommendation {
   batchId: string;
   timestamp: string;       // Display-only, human-readable ("10:15 AM", "Yesterday")
   createdDate: string;     // ISO date string for age calculations (e.g. "2026-07-13T10:15:00Z")
+  // ISO date string for whichever of acknowledged/rejected/resolved happened
+  // first, or undefined/null while still open - lets pending-duration stop
+  // counting at the right moment instead of running forever. Optional so the
+  // existing mock generator doesn't need updating just for this.
+  resolvedDate?: string | null;
   priority: RecommendationPriority;
   status: RecommendationStatus;
   title: string;

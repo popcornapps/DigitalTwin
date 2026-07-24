@@ -268,8 +268,9 @@ export interface DeviationAlert {
   confidence: 'High' | 'Medium' | 'Low' | null;
   likely_root_cause: string | null;
   recommended_action: string | null;
-  status: 'Open' | 'Resolved';
+  status: 'Open' | 'Resolved'; // the agent's own detection state
   resolved_at_elapsed_minutes: number | null;
+  resolved_at: string | null;
   // LLM reasoning layer output, persisted on the alert at creation/material-
   // change time - the same explanation shown in Process Monitoring stays
   // stable here even as the live batch continues past that point.
@@ -277,10 +278,24 @@ export interface DeviationAlert {
   trigger_explanation: string | null;
   urgency: AgentUrgency | null;
   operational_impact: string | null;
+  // The human's decision - separate from `status` above: an operator can
+  // acknowledge an alert that's still actively deviating, and the agent can
+  // resolve an alert nobody ever reviewed.
+  human_decision: 'Acknowledged' | 'Rejected' | null;
+  human_decision_at: string | null;
 }
 
 export const fetchAlerts = (status?: 'Open' | 'Resolved'): Promise<DeviationAlert[]> =>
   fetchJson(`/alerts${status ? `?status=${status}` : ''}`);
+
+// Real backend actions - persist the operator's decision on the alert
+// record itself (survives page refreshes and backend restarts), replacing
+// the earlier browser-only status override.
+export const acknowledgeAlert = (alertId: string): Promise<DeviationAlert> =>
+  postJson(`/alerts/${encodeURIComponent(alertId)}/acknowledge`);
+
+export const rejectAlert = (alertId: string): Promise<DeviationAlert> =>
+  postJson(`/alerts/${encodeURIComponent(alertId)}/reject`);
 
 export const fetchRunningBatches = (): Promise<RunningBatchSummary[]> => fetchJson('/live-batches');
 

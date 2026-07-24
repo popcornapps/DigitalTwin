@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useFilter } from '../context/FilterContext';
-import { getMockRecommendations, getMockActivity, AIRecommendation, RecommendationStatus } from '../lib/mockData';
-import { fetchAlerts } from '../lib/api';
+import { AIRecommendation, RecommendationStatus } from '../lib/mockData';
+import { fetchAlerts, acknowledgeAlert, rejectAlert } from '../lib/api';
 import type { DeviationAlert } from '../lib/api';
 import {
   Inbox, CheckCircle2, XCircle, Clock,
@@ -21,27 +20,47 @@ const URGENCY_TO_PRIORITY: Record<string, 'Critical' | 'Medium' | 'Low'> = {
   'Informational Only': 'Low',
 };
 
-// Real Process Parameter Deviation Agent alerts, shaped to fit the same
-// AIRecommendation card/table/modal this page already renders - additive to
-// the existing mock inbox, not a replacement of it. This is what closes the
-// loop: prediction -> alert -> shows up here -> gets acted on. The narrative
-// fields (alert_summary/trigger_explanation/likely_root_cause/
-// recommended_action/operational_impact) are the LLM reasoning layer's
-// output, persisted on the alert record itself - the same explanation shown
-// in Process Monitoring, not re-derived here.
+// The KPI cards double as the primary filter now - one of the 4 status
+// values, or 'Critical' (a priority, not a status) for the Critical
+// Attention card. null means "no card active" -> the default-visible set.
+type CardFilter = 'New' | 'Acknowledged' | 'Rejected' | 'Resolved' | 'Critical' | null;
+
+function earliestOf(...dates: (string | null)[]): string | null {
+  const valid = dates.filter((d): d is string => d != null);
+  if (valid.length === 0) return null;
+  return valid.reduce((min, d) => (new Date(d).getTime() < new Date(min).getTime() ? d : min));
+}
+
+// Real Process Parameter Deviation Agent alerts, shaped to fit this page's
+// card/table/modal - this is the ONLY source of recommendations on this page
+// now (no mock data mixed in). The narrative fields (alert_summary/
+// trigger_explanation/likely_root_cause/recommended_action/
+// operational_impact) are the LLM reasoning layer's output, persisted on the
+// alert record itself - the same explanation shown in Process Monitoring,
+// not re-derived here.
 function alertToRecommendation(alert: DeviationAlert): AIRecommendation {
   const titleAction = alert.trigger_type === 'predicted' ? 'predicted to deviate' : 'deviation detected';
+  // human_decision (a human explicitly acted) always wins for display status
+  // over status==='Resolved' (the agent noticed the deviation cleared on its
+  // own, nobody necessarily reviewed it) - these are different signals, see
+  // models.DeviationAlert.
+  const status: RecommendationStatus =
+    alert.human_decision === 'Acknowledged' ? 'Acknowledged'
+    : alert.human_decision === 'Rejected' ? 'Rejected'
+    : alert.status === 'Resolved' ? 'Resolved'
+    : 'New';
   return {
     id: alert.alert_id,
     source: 'Process Parameter Deviation Agent',
     batchId: alert.running_batch_id,
     timestamp: new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     createdDate: alert.created_at,
+    // Earliest of the two possible "stop the clock" events - if both a human
+    // decision and an agent auto-resolve happened, pending duration stops at
+    // whichever came first, not whichever is more recent.
+    resolvedDate: earliestOf(alert.human_decision_at, alert.resolved_at),
     priority: alert.urgency ? URGENCY_TO_PRIORITY[alert.urgency] : (alert.severity === 'Critical' ? 'Critical' : 'Medium'),
-    // The AIRecommendation status union has no "Resolved" - closest honest
-    // mapping is Acknowledged (the situation is closed), unless a human has
-    // already applied their own status locally (handled by the merge below).
-    status: alert.status === 'Resolved' ? 'Acknowledged' : 'New',
+    status,
     title: alert.alert_summary ?? `${alert.parameter_label} ${titleAction}`,
     description: alert.trigger_explanation ?? [alert.observation, alert.predicted_observation].filter(Boolean).join(' '),
     reasoning: alert.likely_root_cause ?? 'No matching historical fault pattern identified for this deviation yet.',
@@ -52,37 +71,70 @@ function alertToRecommendation(alert: DeviationAlert): AIRecommendation {
   };
 }
 
-// Returns age in days from createdDate ISO string to "today" (2026-07-20)
-function getAgeDays(createdDateISO: string): number {
-  const created = new Date(createdDateISO);
-  const now = new Date('2026-07-20T00:00:00Z'); // Hardcoded "today" per CLAUDE.md
-  return Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+// Real elapsed time from createdDate to whichever of resolvedDate/"now"
+// applies - replaces the old hardcoded-"today" age math, and actually stops
+// counting once something's been acknowledged/rejected/resolved instead of
+// running forever.
+function formatDuration(createdDateISO: string, resolvedDateISO?: string | null): string {
+  const start = new Date(createdDateISO).getTime();
+  const end = resolvedDateISO ? new Date(resolvedDateISO).getTime() : Date.now();
+  const ms = Math.max(0, end - start);
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return '<1 min';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours !== 1 ? 's' : ''}`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days !== 1 ? 's' : ''}`;
 }
 
-// Returns true if rec is overdue (Critical + New/Pending + >7 days old)
+// Overdue: Critical priority, still unaddressed (status New), open more than
+// 7 real days - same threshold as before, just computed against the real
+// current time instead of a hardcoded fake "today".
 function isOverdue(rec: AIRecommendation): boolean {
-  return rec.priority === 'Critical' &&
-         (rec.status === 'New' || rec.status === 'Pending') &&
-         getAgeDays(rec.createdDate) > 7;
+  if (rec.priority !== 'Critical' || rec.status !== 'New') return false;
+  const ms = Date.now() - new Date(rec.createdDate).getTime();
+  return ms > 7 * 24 * 60 * 60 * 1000;
 }
+
+const RECENT_HANDLED_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// "Just handled" - Acknowledged, Rejected, or Resolved within the last 24
+// hours, using the same earliest-of-(human_decision_at, resolved_at)
+// timestamp already computed onto resolvedDate.
+function isRecentlyHandled(rec: AIRecommendation): boolean {
+  if (rec.status === 'New' || !rec.resolvedDate) return false;
+  return Date.now() - new Date(rec.resolvedDate).getTime() <= RECENT_HANDLED_WINDOW_MS;
+}
+
+// Default visibility rule for the main Recommendation Log (when no KPI card
+// filter is active) - a UI display filter only, nothing is ever deleted
+// from the persisted alert store (see alert_registry.py). Still-open alerts
+// and Critical-priority ones always show regardless of age; anything else
+// only shows for its first 24 hours after being handled, then rolls off
+// into History-only.
+function isDefaultVisible(rec: AIRecommendation): boolean {
+  return rec.status === 'New' || rec.priority === 'Critical' || isRecentlyHandled(rec);
+}
+
+const CARD_LABELS: Record<Exclude<CardFilter, null>, string> = {
+  New: 'New',
+  Acknowledged: 'Acknowledged',
+  Rejected: 'Rejected',
+  Resolved: 'Resolved',
+  Critical: 'Critical',
+};
 
 export default function ReviewDesk() {
-  const { selectedPlant, selectedProduct, selectedPersona } = useFilter();
-
-  // Local state for filters
-  const [filterStatus, setFilterStatus] = useState<string>('All');
+  // The KPI cards ARE the primary filter now - one active card (or null for
+  // the smart default view). Priority/Source remain separate dimensions,
+  // combined on top of whichever card (or default set) is active.
+  const [activeCardFilter, setActiveCardFilter] = useState<CardFilter>(null);
   const [filterPriority, setFilterPriority] = useState<string>('All');
   const [filterSource, setFilterSource] = useState<string>('All');
 
   const [activeRecId, setActiveRecId] = useState<string | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
-  // Local Acknowledge/Reject actions, keyed by id - applied on top of
-  // whatever the mock data or the real alert feed says, so a poll refresh
-  // (every 5s) can't silently undo a click the user already made.
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, RecommendationStatus>>({});
-
-  const mockRecs = useMemo(() => getMockRecommendations(selectedPlant, selectedProduct, selectedPersona), [selectedPlant, selectedProduct, selectedPersona]);
-  const activityLog = useMemo(() => getMockActivity(), []);
 
   const [realAlerts, setRealAlerts] = useState<DeviationAlert[]>([]);
   useEffect(() => {
@@ -104,46 +156,70 @@ export default function ReviewDesk() {
     };
   }, []);
 
-  const recommendations: AIRecommendation[] = useMemo(() => {
-    const combined = [...realAlerts.map(alertToRecommendation), ...mockRecs];
-    return combined.map((r) => (statusOverrides[r.id] ? { ...r, status: statusOverrides[r.id] } : r));
-  }, [mockRecs, realAlerts, statusOverrides]);
+  const recommendations: AIRecommendation[] = useMemo(
+    () => realAlerts.map(alertToRecommendation),
+    [realAlerts],
+  );
 
-  const handleAction = (id: string, newStatus: RecommendationStatus) => {
-    setStatusOverrides((prev) => ({ ...prev, [id]: newStatus }));
-    setActiveRecId(null); // Close modal on action
+  // Acknowledge/Reject are real backend actions now - persisted on the alert
+  // record itself (survives refreshes and backend restarts), not a local
+  // browser-only override. The response is applied immediately so the UI
+  // doesn't have to wait for the next 5s poll to reflect the click.
+  const handleAction = async (id: string, action: 'Acknowledged' | 'Rejected') => {
+    try {
+      const updated = action === 'Acknowledged' ? await acknowledgeAlert(id) : await rejectAlert(id);
+      setRealAlerts((prev) => prev.map((a) => (a.alert_id === id ? updated : a)));
+    } catch {
+      // Leave state as-is; the next poll reconciles with the backend, and
+      // the user can just try the action again.
+    }
+    setActiveRecId(null);
   };
 
-  // Filter recommendations locally
+  const toggleCardFilter = (key: Exclude<CardFilter, null>) => {
+    setActiveCardFilter((prev) => (prev === key ? null : key));
+  };
+
+  // Default-visible set - used only when no KPI card filter is active.
+  const visibleRecs = useMemo(() => recommendations.filter(isDefaultVisible), [recommendations]);
+
+  // A KPI card filter deliberately bypasses the 24h-recency default and
+  // shows the COMPLETE set matching that one criterion - clicking "Resolved"
+  // would be pointless if it only showed the same last-24h slice already
+  // visible by default. Priority/Source then narrow further on top.
   const filteredRecs = useMemo(() => {
-    return recommendations.filter(r => {
-      const matchStatus = filterStatus === 'All' || r.status === filterStatus;
+    const base = activeCardFilter
+      ? recommendations.filter(r => (activeCardFilter === 'Critical' ? r.priority === 'Critical' : r.status === activeCardFilter))
+      : visibleRecs;
+    return base.filter(r => {
       const matchPriority = filterPriority === 'All' || r.priority === filterPriority;
       const matchSource = filterSource === 'All' || r.source === filterSource;
-      return matchStatus && matchPriority && matchSource;
+      return matchPriority && matchSource;
     });
-  }, [recommendations, filterStatus, filterPriority, filterSource]);
+  }, [activeCardFilter, recommendations, visibleRecs, filterPriority, filterSource]);
 
-  // Derived sources for the filter dropdown
+  // Derived sources for the filter dropdown - drawn from the full history so
+  // it works correctly regardless of which card (if any) is active.
   const uniqueSources = useMemo(() => {
     const sources = new Set(recommendations.map(r => r.source));
     return ['All', ...Array.from(sources)];
   }, [recommendations]);
 
-  // KPI Calculations
+  // KPI Calculations - always all-time totals, regardless of which card (if
+  // any) is currently selected as the active filter.
   const kpiNew = recommendations.filter(r => r.status === 'New').length;
-  const kpiPending = recommendations.filter(r => r.status === 'Pending').length;
   const kpiAck = recommendations.filter(r => r.status === 'Acknowledged').length;
   const kpiRej = recommendations.filter(r => r.status === 'Rejected').length;
+  const kpiResolved = recommendations.filter(r => r.status === 'Resolved').length;
 
   // Critical Attention KPIs
   const criticalRecs = recommendations.filter(r => r.priority === 'Critical');
-  const kpiCriticalOpen = criticalRecs.filter(r => r.status === 'New' || r.status === 'Pending').length;
+  const kpiCriticalOpen = criticalRecs.filter(r => r.status === 'New').length;
   const kpiOverdueCritical = criticalRecs.filter(r => isOverdue(r)).length;
-  const oldestCriticalPending = criticalRecs
-    .filter(r => r.status === 'Pending')
+  const oldestCriticalOpen = criticalRecs
+    .filter(r => r.status === 'New')
     .sort((a, b) => new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime())[0];
-  const kpiOldestPending = oldestCriticalPending ? `${getAgeDays(oldestCriticalPending.createdDate)} Days` : 'N/A';
+  const kpiOldestPending = oldestCriticalOpen ? formatDuration(oldestCriticalOpen.createdDate) : 'N/A';
 
   const activeRec = recommendations.find(r => r.id === activeRecId) || null;
 
@@ -174,16 +250,30 @@ export default function ReviewDesk() {
         </div>
       </div>
 
-      {/* KPI Cards Row */}
+      {/* KPI Cards Row - now the primary filter control, click to filter the log below */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <KPICard title="New" value={kpiNew} icon={<Zap />} color="text-indigo-600" bg="bg-indigo-50" />
-        <KPICard title="Pending Review" value={kpiPending} icon={<Clock />} color="text-amber-600" bg="bg-amber-50" />
-        <KPICard title="Acknowledged" value={kpiAck} icon={<CheckCircle2 />} color="text-emerald-600" bg="bg-emerald-50" />
-        <KPICard title="Rejected" value={kpiRej} icon={<XCircle />} color="text-rose-600" bg="bg-rose-50" />
+        <KPICard
+          title="New" value={kpiNew} icon={<Zap />} color="text-indigo-600" bg="bg-indigo-50"
+          isActive={activeCardFilter === 'New'} onClick={() => toggleCardFilter('New')}
+        />
+        <KPICard
+          title="Acknowledged" value={kpiAck} icon={<CheckCircle2 />} color="text-emerald-600" bg="bg-emerald-50"
+          isActive={activeCardFilter === 'Acknowledged'} onClick={() => toggleCardFilter('Acknowledged')}
+        />
+        <KPICard
+          title="Rejected" value={kpiRej} icon={<XCircle />} color="text-rose-600" bg="bg-rose-50"
+          isActive={activeCardFilter === 'Rejected'} onClick={() => toggleCardFilter('Rejected')}
+        />
+        <KPICard
+          title="Resolved" value={kpiResolved} icon={<Activity />} color="text-teal-600" bg="bg-teal-50"
+          isActive={activeCardFilter === 'Resolved'} onClick={() => toggleCardFilter('Resolved')}
+        />
         <CriticalAttentionCard
           criticalOpen={kpiCriticalOpen}
           overdueCritical={kpiOverdueCritical}
           oldestPending={kpiOldestPending}
+          isActive={activeCardFilter === 'Critical'}
+          onClick={() => toggleCardFilter('Critical')}
         />
       </div>
 
@@ -194,18 +284,6 @@ export default function ReviewDesk() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-gray-50 border border-gray-200 text-xs text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer font-bold"
-          >
-            <option value="All">All Statuses</option>
-            <option value="New">New</option>
-            <option value="Pending">Pending</option>
-            <option value="Acknowledged">Acknowledged</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value)}
@@ -231,13 +309,29 @@ export default function ReviewDesk() {
       <div className="flex flex-col gap-4">
 
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm flex-1 overflow-hidden flex flex-col">
-          <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center">
+          <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center flex-wrap gap-2">
             <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest flex items-center gap-2">
               <FileText size={16} className="text-gray-400" /> Recommendation Log
             </h2>
-            <span className="text-[10px] font-bold text-gray-400">
-              {filteredRecs.length} items
-            </span>
+            <div className="flex items-center gap-3">
+              {activeCardFilter && (
+                <span className="text-[11px] font-bold text-gray-500">
+                  Showing: {CARD_LABELS[activeCardFilter]}
+                  <button
+                    onClick={() => setActiveCardFilter(null)}
+                    className="ml-2 text-indigo-600 hover:text-indigo-800 normal-case font-bold"
+                  >
+                    Show All ×
+                  </button>
+                </span>
+              )}
+              <span className="text-[10px] font-bold text-gray-400">
+                {filteredRecs.length} items
+                {!activeCardFilter && recommendations.length > visibleRecs.length && (
+                  <span className="font-semibold normal-case text-gray-400"> · {recommendations.length - visibleRecs.length} older in History</span>
+                )}
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -255,7 +349,11 @@ export default function ReviewDesk() {
                 {filteredRecs.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-5 py-8 text-center text-sm font-semibold text-gray-400">
-                      No recommendations match the current filters.
+                      {activeCardFilter
+                        ? `No ${CARD_LABELS[activeCardFilter]} alerts recorded.`
+                        : visibleRecs.length === 0
+                        ? 'No alerts currently need attention. Anything resolved or handled has rolled off into History.'
+                        : 'No recommendations match the current filters.'}
                     </td>
                   </tr>
                 ) : (
@@ -274,7 +372,7 @@ export default function ReviewDesk() {
                         <td className="px-4 py-4 align-top">
                           <div className="flex items-center gap-2">
                             <div className="text-sm font-bold text-gray-800">{rec.title}</div>
-                            {rec.priority === 'Critical' && (rec.status === 'New' || rec.status === 'Pending') && (
+                            {rec.priority === 'Critical' && rec.status === 'New' && (
                               <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200">
                                 Critical
                               </span>
@@ -347,9 +445,8 @@ export default function ReviewDesk() {
                 <div>
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Pending Duration</span>
                   <p className="text-sm font-bold text-gray-800">
-                    {activeRec.status === 'Pending' || activeRec.status === 'New'
-                      ? `${getAgeDays(activeRec.createdDate)} Days`
-                      : 'Closed'}
+                    {formatDuration(activeRec.createdDate, activeRec.resolvedDate)}
+                    {!activeRec.resolvedDate && <span className="ml-1.5 font-semibold text-amber-600 text-xs">(ongoing)</span>}
                   </p>
                 </div>
               </div>
@@ -406,34 +503,52 @@ export default function ReviewDesk() {
         </div>
       )}
 
-      {/* History Modal */}
+      {/* History Modal - real alert history (Open/Acknowledged/Rejected/
+          Resolved), not mock activity. Every alert the agent has ever
+          generated shows up here, since alert_registry never deletes one -
+          it only changes status. */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-md flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-2xl flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5">
             <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
               <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest flex items-center gap-2">
-                <Activity size={16} className="text-teal-500" /> Activity History
+                <Activity size={16} className="text-teal-500" /> Alert History
               </h2>
               <button onClick={() => setShowHistoryModal(false)} className="p-1 hover:bg-gray-200 rounded-md text-gray-500 transition-colors">
                 <XCircle size={18} />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1">
-              <div className="space-y-5">
-                {activityLog.map((log, i) => (
-                  <div key={i} className="flex gap-4 relative">
-                    {i !== activityLog.length - 1 && (
-                      <div className="absolute top-5 left-1.5 w-px h-full bg-gray-100"></div>
-                    )}
-                    <div className="w-3 h-3 rounded-full bg-gray-200 border-2 border-white shrink-0 mt-1 z-10 box-content"></div>
-                    <div>
-                      <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wider mb-0.5">{log.time}</p>
-                      <p className="text-sm text-gray-700 font-medium leading-snug">{log.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="overflow-y-auto flex-1">
+              {recommendations.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No alerts recorded yet.</p>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-white">
+                    <tr className="border-b border-gray-100 text-gray-400">
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">Time</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider">Title</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">Batch</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {recommendations.map((rec) => (
+                      <tr key={rec.id} className="hover:bg-gray-50/50">
+                        <td className="px-5 py-3 align-top whitespace-nowrap">
+                          <div className="text-xs font-bold text-gray-700">{rec.timestamp}</div>
+                          <div className="text-[10px] text-gray-400">{new Date(rec.createdDate).toLocaleDateString()}</div>
+                        </td>
+                        <td className="px-4 py-3 align-top text-sm text-gray-800 font-medium max-w-[260px] truncate">{rec.title}</td>
+                        <td className="px-4 py-3 align-top whitespace-nowrap text-xs font-bold text-gray-500">{rec.batchId}</td>
+                        <td className="px-5 py-3 align-top">
+                          <Badge type="status" value={rec.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
@@ -443,9 +558,17 @@ export default function ReviewDesk() {
   );
 }
 
-function KPICard({ title, value, icon, color, bg }: { title: string, value: number, icon: React.ReactNode, color: string, bg: string }) {
+function KPICard({ title, value, icon, color, bg, isActive, onClick }: {
+  title: string, value: number, icon: React.ReactNode, color: string, bg: string,
+  isActive: boolean, onClick: () => void,
+}) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+    <button
+      onClick={onClick}
+      className={`text-left bg-white rounded-xl border shadow-sm p-4 flex items-center gap-3 transition-all hover:shadow-md ${
+        isActive ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-100 hover:border-gray-200'
+      }`}
+    >
       <div className={`p-2.5 rounded-lg ${bg} ${color}`}>
         {React.cloneElement(icon as React.ReactElement, { size: 18 })}
       </div>
@@ -453,13 +576,21 @@ function KPICard({ title, value, icon, color, bg }: { title: string, value: numb
         <p className="text-xl font-black text-gray-900 leading-none">{value}</p>
         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider leading-tight mt-1">{title}</p>
       </div>
-    </div>
+    </button>
   );
 }
 
-function CriticalAttentionCard({ criticalOpen, overdueCritical, oldestPending }: { criticalOpen: number, overdueCritical: number, oldestPending: string }) {
+function CriticalAttentionCard({ criticalOpen, overdueCritical, oldestPending, isActive, onClick }: {
+  criticalOpen: number, overdueCritical: number, oldestPending: string,
+  isActive: boolean, onClick: () => void,
+}) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+    <button
+      onClick={onClick}
+      className={`text-left bg-white rounded-xl border shadow-sm p-4 transition-all hover:shadow-md ${
+        isActive ? 'border-orange-400 ring-2 ring-orange-100' : 'border-gray-100 hover:border-gray-200'
+      }`}
+    >
       <div className="flex items-center gap-2 mb-3">
         <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
           <AlertTriangle size={18} />
@@ -480,7 +611,7 @@ function CriticalAttentionCard({ criticalOpen, overdueCritical, oldestPending }:
           <span className="text-base font-black text-gray-700">{oldestPending}</span>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -493,9 +624,9 @@ function Badge({ type, value }: { type: 'priority' | 'status', value: string }) 
     else styles = 'bg-gray-100 text-gray-600 border-gray-200';
   } else {
     if (value === 'New') styles = 'bg-blue-100 text-blue-800 border-blue-200 font-black';
-    else if (value === 'Pending') styles = 'bg-amber-50 text-amber-700 border-amber-200';
     else if (value === 'Acknowledged') styles = 'bg-emerald-50 text-emerald-700 border-emerald-200';
     else if (value === 'Rejected') styles = 'bg-gray-100 text-gray-500 border-gray-200';
+    else if (value === 'Resolved') styles = 'bg-teal-50 text-teal-700 border-teal-200';
   }
 
   return (
