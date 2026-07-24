@@ -105,12 +105,22 @@ class DeviationAlert:
     confidence: str | None
     likely_root_cause: str | None
     recommended_action: str | None
-    status: str  # 'Open' | 'Resolved'
+    status: str  # 'Open' | 'Resolved' - the AGENT's own detection state (has the deviation cleared on its own)
     resolved_at_elapsed_minutes: int | None = None
+    # Wall-clock time the agent marked this Resolved - distinct from
+    # resolved_at_elapsed_minutes (which is relative to the batch's own
+    # clock) - needed to compute real pending duration against created_at.
+    resolved_at: datetime | None = None
     alert_summary: str | None = None
     trigger_explanation: str | None = None
     urgency: str | None = None
     operational_impact: str | None = None
+    # The HUMAN's decision - deliberately separate from `status` above: an
+    # operator can acknowledge an alert that's still actively deviating, and
+    # the agent can resolve an alert nobody ever reviewed. Collapsing these
+    # into one field would hide one or the other.
+    human_decision: str | None = None  # 'Acknowledged' | 'Rejected' | None
+    human_decision_at: datetime | None = None
     # Cache key for deciding whether the persisted LLM reasoning above needs
     # regenerating (new alert, severity change, or the ranked root-cause
     # candidates changed) - not serialized to the API.

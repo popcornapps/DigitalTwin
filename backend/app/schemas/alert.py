@@ -19,11 +19,15 @@ class DeviationAlertOut(BaseModel):
     confidence: str | None
     likely_root_cause: str | None
     recommended_action: str | None
-    status: str  # 'Open' | 'Resolved'
+    status: str  # 'Open' | 'Resolved' - the agent's own detection state
     resolved_at_elapsed_minutes: int | None
+    resolved_at: datetime | None = None
     # LLM reasoning layer output (app.live.llm_agent), persisted on the alert
     # at creation/material-change time so it stays stable in the AI Review Desk.
     alert_summary: str | None = None
     trigger_explanation: str | None = None
     urgency: str | None = None
     operational_impact: str | None = None
+    # The human's decision - separate from `status` (see models.DeviationAlert).
+    human_decision: str | None = None  # 'Acknowledged' | 'Rejected' | None
+    human_decision_at: datetime | None = None
