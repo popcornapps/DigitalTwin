@@ -6,6 +6,7 @@ from app.schemas.live_batch import (
     CreateRunningBatchRequest,
     LiveParameterPredictionOut,
     LivePredictionOut,
+    ParameterAssessmentOut,
     RunningBatchSummary,
     RunningBatchTelemetryResponse,
     TelemetryReadingOut,
@@ -84,7 +85,27 @@ def get_telemetry(running_batch_id: str):
             ],
         )
 
-    return RunningBatchTelemetryResponse(batch=_to_summary(batch), points=points, prediction=prediction)
+    assessments = [
+        ParameterAssessmentOut(
+            key=a.key,
+            current_status=a.current_status,
+            current_observation=a.current_observation,
+            predicted_status=a.predicted_status,
+            predicted_observation=a.predicted_observation,
+            time_to_breach_minutes=a.time_to_breach_minutes,
+            confidence=a.confidence,
+            likely_root_cause=a.likely_root_cause,
+            recommended_action=a.recommended_action,
+            trigger_type=a.trigger_type,
+            alert_summary=a.alert_summary,
+            trigger_explanation=a.trigger_explanation,
+            urgency=a.urgency,
+            operational_impact=a.operational_impact,
+        )
+        for a in batch.latest_assessments
+    ]
+
+    return RunningBatchTelemetryResponse(batch=_to_summary(batch), points=points, prediction=prediction, assessments=assessments)
 
 
 @router.post('/{running_batch_id}/stop', response_model=RunningBatchSummary)

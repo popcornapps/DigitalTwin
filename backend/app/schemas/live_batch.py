@@ -40,12 +40,33 @@ class LivePredictionOut(BaseModel):
     parameters: list[LiveParameterPredictionOut]
 
 
+class ParameterAssessmentOut(BaseModel):
+    key: str
+    current_status: str
+    current_observation: str
+    predicted_status: str | None
+    predicted_observation: str | None
+    time_to_breach_minutes: float | None
+    confidence: str | None
+    likely_root_cause: str | None
+    recommended_action: str | None
+    trigger_type: str | None
+    # LLM reasoning layer output (app.live.llm_agent) - None until trigger_type is set.
+    alert_summary: str | None = None
+    trigger_explanation: str | None = None
+    urgency: str | None = None
+    operational_impact: str | None = None
+
+
 class RunningBatchTelemetryResponse(BaseModel):
     batch: RunningBatchSummary
     points: list[TelemetryReadingOut]
     # None until 30+ minutes of history exist for this batch - no fabricated
     # placeholder forecast in that window, per the design's honesty rule.
     prediction: LivePredictionOut | None = None
+    # Process Parameter Deviation Agent output - one entry per parameter,
+    # empty list until there's a first reading to assess.
+    assessments: list[ParameterAssessmentOut] = []
 
 
 class CreateRunningBatchRequest(BaseModel):

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import CORS_ORIGINS
 from app.live import scheduler as live_scheduler
 from app.live import service as live_service
-from app.routers import batch_kpis, batches, live_batches, parameters, predictions
+from app.routers import alerts, batch_kpis, batches, live_batches, parameters, predictions
 from app.state import app_state
 
 
@@ -38,6 +38,7 @@ app.include_router(predictions.router)
 app.include_router(parameters.router)
 app.include_router(batch_kpis.router)
 app.include_router(live_batches.router)
+app.include_router(alerts.router)
 
 
 @app.get('/api/health')

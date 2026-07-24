@@ -24,6 +24,15 @@ def get_telemetry_history(running_batch_id: str) -> list[TelemetryReading]:
     return running_batch_registry.get_history(running_batch_id)
 
 
+def get_latest_reading(running_batch_id: str) -> TelemetryReading | None:
+    """Available from minute 0 - unlike get_recent_readings (which needs a
+    full 30-minute window for the ML feature vector), a single latest
+    reading needs no history at all, which is why the Deviation Agent's
+    CURRENT-value assessment doesn't have to wait for a prediction to exist."""
+    history = running_batch_registry.get_history(running_batch_id)
+    return history[-1] if history else None
+
+
 def stop_running_batch(running_batch_id: str) -> RunningBatch | None:
     return running_batch_registry.stop(running_batch_id)
 
