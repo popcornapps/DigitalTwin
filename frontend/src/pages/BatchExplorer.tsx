@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Activity, ShieldCheck, Clock, Flame, Award, XCircle, Loader2, AlertTriangle, Radio, ExternalLink } from 'lucide-react';
+import { Search, Activity, ShieldCheck, Clock, Flame, Award, XCircle, Loader2, AlertTriangle, Radio, ExternalLink, Package, FlaskConical } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { KPIInfoModal } from '../components/KPIInfoModal';
-import { getKPIDefinition } from '../lib/kpiDefinitions';
+import { getKPIDefinition, buildCurrentCalculation } from '../lib/kpiDefinitions';
 import { fetchBatches, fetchAllBatchKPIs, fetchRunningBatches } from '../lib/api';
 import type { BatchSummary, BatchKPIs, RunningBatchSummary } from '../lib/api';
 import { PERSONA_CONFIGS } from '../App';
@@ -351,56 +351,93 @@ export default function BatchExplorer() {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1">
-              <div className="grid grid-cols-2 gap-4">
-                <KpiCard
-                  label="Yield"
-                  value={activeKpis ? `${activeKpis.yield_pct.toFixed(1)}%` : '—'}
-                  icon={<Activity className="h-5 w-5 text-emerald-600" />}
-                  color="bg-emerald-50"
-                  onClick={() => setActiveKPIId('yield')}
-                  hint="Click for details"
-                />
-                <KpiCard
-                  label="Quality Score"
-                  value={activeKpis ? `${activeKpis.quality_score_pct.toFixed(1)}%` : '—'}
-                  icon={<ShieldCheck className="h-5 w-5 text-rose-600" />}
-                  color="bg-rose-50"
-                  onClick={() => setActiveKPIId('qualityScore')}
-                  hint="Click for details"
-                />
-                <KpiCard
-                  label="Cycle Time"
-                  value={`${cycleTimeHrs} hrs`}
-                  icon={<Clock className="h-5 w-5 text-blue-600" />}
-                  color="bg-blue-50"
-                  onClick={() => setActiveKPIId('cycleTime')}
-                  hint="Click for details"
-                />
-                <KpiCard
-                  label="Specific Energy Consumption (SEC)"
-                  value={activeKpis ? `${activeKpis.sec_kwh_per_kg.toFixed(2)} kWh/kg` : '—'}
-                  icon={<Flame className="h-5 w-5 text-orange-600" />}
-                  color="bg-orange-50"
-                  onClick={() => setActiveKPIId('sec')}
-                  hint="Click for details"
-                />
-                <KpiCard
-                  label="Process Stability"
-                  value={activeKpis ? `${activeKpis.process_stability_pct.toFixed(1)}%` : '—'}
-                  icon={<Award className="h-5 w-5 text-teal-600" />}
-                  color="bg-teal-50"
-                  onClick={() => setActiveKPIId('processStability')}
-                  hint="Click for details"
-                />
-                <KpiCard
-                  label="OEE"
-                  value={activeKpis ? `${activeKpis.oee_pct.toFixed(1)}%` : '—'}
-                  icon={<Activity className="h-5 w-5 text-indigo-600" />}
-                  color="bg-indigo-50"
-                  onClick={() => setActiveKPIId('oee')}
-                  hint="Click for details"
-                />
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Batch Outcome</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <KpiCard
+                    label="Yield"
+                    value={activeKpis ? `${activeKpis.yield_pct.toFixed(1)}%` : '—'}
+                    icon={<Activity className="h-5 w-5 text-emerald-600" />}
+                    color="bg-emerald-50"
+                    onClick={() => setActiveKPIId('yield')}
+                    hint="Click for details"
+                  />
+                  <KpiCard
+                    label="Actual Output"
+                    value={activeKpis ? `${activeKpis.actual_output_kg.toFixed(1)} kg` : '—'}
+                    icon={<Package className="h-5 w-5 text-emerald-600" />}
+                    color="bg-emerald-50"
+                  />
+                  <KpiCard
+                    label="Theoretical Output"
+                    value={activeKpis ? `${activeKpis.theoretical_output_kg.toFixed(0)} kg` : '—'}
+                    icon={<Package className="h-5 w-5 text-slate-500" />}
+                    color="bg-slate-50"
+                  />
+                  <KpiCard
+                    label="Assay %"
+                    value={activeKpis ? `${activeKpis.assay_pct.toFixed(1)}%` : '—'}
+                    icon={<FlaskConical className="h-5 w-5 text-rose-600" />}
+                    color="bg-rose-50"
+                    onClick={() => setActiveKPIId('assay')}
+                    hint="Click for details"
+                  />
+                  <KpiCard
+                    label="Quality Score"
+                    value={activeKpis ? `${activeKpis.quality_score_pct.toFixed(1)}%` : '—'}
+                    icon={<ShieldCheck className="h-5 w-5 text-rose-600" />}
+                    color="bg-rose-50"
+                    onClick={() => setActiveKPIId('qualityScore')}
+                    hint="Click for details"
+                  />
+                  <KpiCard
+                    label="Energy Consumption"
+                    value={activeKpis ? `${activeKpis.total_energy_kwh.toFixed(0)} kWh` : '—'}
+                    icon={<Flame className="h-5 w-5 text-orange-600" />}
+                    color="bg-orange-50"
+                    onClick={() => setActiveKPIId('sec')}
+                    hint="Click for details"
+                  />
+                  <KpiCard
+                    label="Specific Energy Consumption (SEC)"
+                    value={activeKpis ? `${activeKpis.sec_kwh_per_kg.toFixed(2)} kWh/kg` : '—'}
+                    icon={<Flame className="h-5 w-5 text-orange-600" />}
+                    color="bg-orange-50"
+                    onClick={() => setActiveKPIId('sec')}
+                    hint="Click for details"
+                  />
+                  <KpiCard
+                    label="OEE"
+                    value={activeKpis ? `${activeKpis.oee_pct.toFixed(1)}%` : '—'}
+                    icon={<Activity className="h-5 w-5 text-indigo-600" />}
+                    color="bg-indigo-50"
+                    onClick={() => setActiveKPIId('oee')}
+                    hint="Click for details"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Process</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <KpiCard
+                    label="Process Stability"
+                    value={activeKpis ? `${activeKpis.process_stability_pct.toFixed(1)}%` : '—'}
+                    icon={<Award className="h-5 w-5 text-teal-600" />}
+                    color="bg-teal-50"
+                    onClick={() => setActiveKPIId('processStability')}
+                    hint="Click for details"
+                  />
+                  <KpiCard
+                    label="Cycle Time"
+                    value={`${cycleTimeHrs} hrs`}
+                    icon={<Clock className="h-5 w-5 text-blue-600" />}
+                    color="bg-blue-50"
+                    onClick={() => setActiveKPIId('cycleTime')}
+                    hint="Click for details"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -466,7 +503,7 @@ export default function BatchExplorer() {
 
       {/* KPI Education Modal (stacks on top of batch modal at z-[70]) */}
       {activeKPIId && getKPIDefinition(activeKPIId) && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-transparent backdrop-blur-[2px]">
           <div className="pointer-events-auto">
             <KPIInfoModal
               kpiDefinition={getKPIDefinition(activeKPIId)!}
@@ -474,11 +511,13 @@ export default function BatchExplorer() {
                 activeKPIId === 'cycleTime' ? `${cycleTimeHrs} hrs` :
                 activeKPIId === 'yield' && activeKpis ? `${activeKpis.yield_pct.toFixed(1)}%` :
                 activeKPIId === 'qualityScore' && activeKpis ? `${activeKpis.quality_score_pct.toFixed(1)}%` :
+                activeKPIId === 'assay' && activeKpis ? `${activeKpis.assay_pct.toFixed(1)}%` :
                 activeKPIId === 'sec' && activeKpis ? `${activeKpis.sec_kwh_per_kg.toFixed(2)} kWh/kg` :
                 activeKPIId === 'processStability' && activeKpis ? `${activeKpis.process_stability_pct.toFixed(1)}%` :
                 activeKPIId === 'oee' && activeKpis ? `${activeKpis.oee_pct.toFixed(1)}%` :
                 undefined
               }
+              currentCalculation={activeKpis ? buildCurrentCalculation(activeKPIId, activeKpis) : undefined}
               onClose={() => setActiveKPIId(null)}
             />
           </div>

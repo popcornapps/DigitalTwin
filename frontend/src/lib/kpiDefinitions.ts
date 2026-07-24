@@ -1,23 +1,21 @@
-// KPI Educational Definitions for PharmaTwin Digital Twin
-// Central source of truth for all KPI metadata and educational content
+// KPI reference content for PharmaTwin Digital Twin
+// Central source of truth for KPI metadata shown in the compact KPI info modal.
+
+import type { BatchKPIs } from './api';
 
 export interface KPIDefinition {
   id: string;
   name: string;
   shortName: string;
   definition: string;
-  importance: string;
   formula: string;
   exampleCalculation: {
     inputs: { label: string; value: string }[];
     calculation: string;
     result: string;
   };
-  increasingFactors: string[];
-  decreasingFactors: string[];
   benchmarkRange: string;
   influencingParameters: string[];
-  digitalTwinNote: string;
   category: 'efficiency' | 'quality' | 'performance' | 'energy' | 'similarity';
 }
 
@@ -26,375 +24,292 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
     id: 'oee',
     name: 'Overall Equipment Effectiveness (OEE)',
     shortName: 'OEE',
-    definition: 'OEE measures how efficiently manufacturing equipment operates by combining three factors: Availability (uptime), Performance (speed), and Quality (good output). It\'s the gold standard metric in manufacturing.',
-    importance: 'OEE is the single most important metric for understanding manufacturing productivity. World-class manufacturers target 85%+ OEE. It reveals hidden capacity and identifies improvement opportunities across equipment, processes, and quality.',
+    definition: 'OEE combines Availability (uptime), Performance (speed), and Quality (good output) into a single manufacturing efficiency score. It\'s the industry-standard metric for spotting hidden capacity and productivity losses.',
     formula: 'OEE = Availability × Performance × Quality',
     exampleCalculation: {
       inputs: [
-        { label: 'Availability', value: '95% (equipment ran 22.8 out of 24 planned hours)' },
-        { label: 'Performance', value: '91% (ran at 91% of maximum speed)' },
-        { label: 'Quality', value: '97% (97% of output passed quality checks)' }
+        { label: 'Availability', value: '95%' },
+        { label: 'Performance', value: '91%' },
+        { label: 'Quality', value: '97%' },
       ],
       calculation: 'OEE = 0.95 × 0.91 × 0.97',
-      result: '83.9%'
+      result: '83.9%',
     },
-    increasingFactors: [
-      'Preventive maintenance reducing unplanned downtime',
-      'Optimized equipment speeds and cycle times',
-      'Process stability improving first-pass yield',
-      'Reduced changeover and setup times',
-      'Operator training and standard work procedures',
-      'Real-time monitoring and quick issue resolution'
-    ],
-    decreasingFactors: [
-      'Unplanned equipment breakdowns and failures',
-      'Equipment running below optimal speed',
-      'Quality defects requiring rework or scrap',
-      'Extended changeover times between products',
-      'Waiting for materials, operators, or quality approvals',
-      'Minor stoppages and idling'
-    ],
     benchmarkRange: 'World-class: 85%+, Good: 70-85%, Fair: 60-70%, Poor: <60%',
     influencingParameters: [
       'Equipment runtime vs. planned production time',
       'Actual throughput vs. ideal cycle time',
       'Good units produced vs. total units started',
       'Downtime events (breakdowns, changeovers, waiting)',
-      'Speed losses (slow cycles, minor stops)',
-      'Quality losses (defects, rework, startup rejects)'
     ],
-    digitalTwinNote: 'In a real Digital Twin, OEE would be calculated live from: (1) Equipment state sensors (running/stopped/idle), (2) Production counters measuring actual output, (3) Quality inspection results, (4) Downtime event logs from SCADA/MES systems. ML models would predict OEE degradation before it happens based on equipment condition.',
-    category: 'efficiency'
+    category: 'efficiency',
   },
 
   yield: {
     id: 'yield',
     name: 'Batch Yield',
     shortName: 'Yield',
-    definition: 'Yield is the percentage of raw materials that successfully become finished product. It measures material efficiency and process losses throughout manufacturing.',
-    importance: 'Yield directly impacts profitability and sustainability. Each 1% improvement in yield can save millions in material costs. Low yield indicates waste, inefficiency, or quality problems that need root cause investigation.',
-    formula: 'Yield = (Actual Output / Theoretical Maximum Output) × 100%',
+    definition: 'Yield is the percentage of theoretical output a batch actually produces. Lower yield means material waste, rework, or a process problem worth investigating.',
+    formula: 'Yield = (Actual Output / Theoretical Output) × 100%',
     exampleCalculation: {
       inputs: [
-        { label: 'Raw Materials Input', value: '1000 kg' },
-        { label: 'Theoretical Yield', value: '990 kg (accounting for unavoidable losses)' },
-        { label: 'Actual Output', value: '970 kg of finished tablets' }
+        { label: 'Theoretical Output', value: '150 kg' },
+        { label: 'Actual Output', value: '148.6 kg' },
       ],
-      calculation: 'Yield = (970 kg / 990 kg) × 100%',
-      result: '97.98%'
+      calculation: 'Yield = 148.6 / 150 × 100',
+      result: '99.1%',
     },
-    increasingFactors: [
-      'Optimized mixing and granulation parameters',
-      'Proper equipment calibration (feeders, scales)',
-      'Reduced dust and material handling losses',
-      'Improved process control reducing off-spec batches',
-      'Better raw material quality and consistency',
-      'Operator adherence to Standard Operating Procedures'
-    ],
-    decreasingFactors: [
-      'Material spills and dust losses during transfer',
-      'Product sticking to equipment walls',
-      'Over-drying leading to excessive moisture loss',
-      'Rejected batches due to quality failures',
-      'Incomplete material discharge from mixers',
-      'Off-spec intermediate products requiring disposal'
-    ],
     benchmarkRange: 'Pharmaceutical industry: 96-99.5% (high-value products target 99%+)',
     influencingParameters: [
-      'Mixing time and intensity',
-      'Granulation moisture and binder amount',
-      'Drying temperature and time',
-      'Compression force and tablet hardness',
-      'Equipment cleaning losses',
-      'Dust collection system efficiency'
+      'Process stability during drying (Temperature/Pressure/Flow)',
+      'Mixing and granulation control',
+      'Equipment calibration (feeders, scales)',
+      'Rejected or off-spec material',
     ],
-    digitalTwinNote: 'A real Digital Twin would calculate yield from: (1) Weighing systems measuring raw material dispensing, (2) In-process weight checks at each stage, (3) Final batch weight from packaging scales, (4) Reject/rework tracking from quality systems. Predictive models would forecast yield based on current process conditions.',
-    category: 'efficiency'
+    category: 'efficiency',
   },
 
   qualityScore: {
     id: 'qualityScore',
     name: 'Quality Score',
     shortName: 'Quality Score',
-    definition: 'Quality Score is a weighted composite metric representing how well a batch meets all quality specifications. It combines multiple Critical Quality Attributes (CQAs) like purity, dissolution, hardness, moisture, and content uniformity.',
-    importance: 'Quality Score determines batch release approval and regulatory compliance. Poor quality leads to batch rejection, rework costs, regulatory findings, and patient safety risks. Consistent high quality scores indicate process capability and control.',
-    formula: 'Quality Score = Σ (CQA Test Result × Weight) for all CQAs',
+    definition: 'Quality Score summarizes how close a batch\'s Assay result sits to its label-claim target. It\'s the number that determines whether a batch is release-ready.',
+    formula: 'Quality Score = 100 × (1 - |Assay % - Target| / 10)',
     exampleCalculation: {
       inputs: [
-        { label: 'Purity', value: '98.2% (weight: 30%)' },
-        { label: 'Dissolution', value: '96.8% (weight: 25%)' },
-        { label: 'Hardness', value: '95.5% (weight: 20%)' },
-        { label: 'Moisture Content', value: '97.0% (weight: 15%)' },
-        { label: 'Content Uniformity', value: '96.0% (weight: 10%)' }
+        { label: 'Assay', value: '99.6%' },
+        { label: 'Target', value: '100.0%' },
       ],
-      calculation: 'Quality Score = (98.2×0.3) + (96.8×0.25) + (95.5×0.2) + (97×0.15) + (96×0.1)',
-      result: '96.88%'
+      calculation: 'Quality Score = 100 × (1 - |99.6 - 100| / 10)',
+      result: '96.0%',
     },
-    increasingFactors: [
-      'Stable process parameters within narrow control limits',
-      'High-quality raw materials from qualified suppliers',
-      'Proper equipment calibration and maintenance',
-      'Optimal drying, mixing, and compression parameters',
-      'Effective in-process quality checks and corrections',
-      'Adherence to Golden Batch process profile'
-    ],
-    decreasingFactors: [
-      'Process parameter drift (temperature, pressure, humidity)',
-      'Raw material variability or out-of-spec materials',
-      'Equipment malfunction or poor calibration',
-      'Environmental condition changes (seasonal humidity)',
-      'Operator errors or procedure deviations',
-      'Insufficient mixing or granulation time'
-    ],
     benchmarkRange: 'Pharmaceutical release standard: >95% (typical 97-99.5%)',
     influencingParameters: [
-      'Drying temperature and time (affects moisture)',
-      'Mixing speed and duration (affects content uniformity)',
-      'Compression force (affects hardness and dissolution)',
-      'Granulation liquid addition rate (affects particle size)',
-      'Ambient humidity (affects moisture uptake)',
-      'Raw material purity and particle size distribution'
+      'Assay result vs. label-claim target',
+      'Process stability during drying',
+      'Temperature/Pressure/Flow excursions',
     ],
-    digitalTwinNote: 'In a real Digital Twin, Quality Score would integrate: (1) Lab instrument results (HPLC for purity, dissolution tester, hardness tester, moisture analyzer), (2) In-process sensors (NIR spectroscopy for real-time content), (3) Historical correlations between process parameters and quality outcomes. ML models would predict final quality scores mid-batch to enable corrective actions.',
-    category: 'quality'
+    category: 'quality',
+  },
+
+  assay: {
+    id: 'assay',
+    name: 'Assay %',
+    shortName: 'Assay',
+    definition: 'Assay is the measured potency of the active pharmaceutical ingredient (API), expressed as a percentage of labeled strength. It\'s a release-blocking Critical Quality Attribute - too little API and the medicine may not work, too much and it may be unsafe.',
+    formula: 'Assay % = (Measured API Content / Labeled API Content) × 100%',
+    exampleCalculation: {
+      inputs: [
+        { label: 'Labeled Strength', value: '100.0% (target)' },
+        { label: 'Measured API Content', value: '99.6%' },
+      ],
+      calculation: 'Assay % = 99.6 / 100.0 × 100',
+      result: '99.6%',
+    },
+    benchmarkRange: 'Pharmaceutical specification: 95-105% of label claim (target 100%)',
+    influencingParameters: [
+      'Drying temperature and duration',
+      'Process pressure stability',
+      'Flow rate consistency',
+    ],
+    category: 'quality',
   },
 
   processStability: {
     id: 'processStability',
     name: 'Process Stability',
     shortName: 'Process Stability',
-    definition: 'Process Stability measures how consistently critical process parameters remain within target control limits. High stability means predictable, reproducible manufacturing with minimal variation.',
-    importance: 'Process stability is a leading indicator of quality and efficiency. Stable processes produce consistent batches, reduce waste, and minimize unexpected deviations. Regulatory agencies expect demonstrated process stability for continued manufacturing approval.',
-    formula: 'Process Stability = (Time in Control / Total Time) × 100% averaged across all critical parameters',
+    definition: 'Process Stability is the % of steady-state time Temperature, Pressure, and Flow Rate held within their control limits, averaged across the three. Higher stability means a more predictable, reproducible batch.',
+    formula: 'Process Stability = Average(% time in control) across Temperature, Pressure, Flow Rate',
     exampleCalculation: {
       inputs: [
-        { label: 'Temperature', value: '58 out of 60 minutes within ±1% (96.7%)' },
-        { label: 'Pressure', value: '60 out of 60 minutes within ±1% (100%)' },
-        { label: 'pH', value: '57 out of 60 minutes within ±1% (95%)' },
-        { label: 'Mixing Speed', value: '59 out of 60 minutes within ±1% (98.3%)' },
-        { label: 'Flow Rate', value: '56 out of 60 minutes within ±1% (93.3%)' },
-        { label: 'Humidity', value: '59 out of 60 minutes within ±1% (98.3%)' }
+        { label: 'Temperature', value: '96.7% in control' },
+        { label: 'Pressure', value: '100% in control' },
+        { label: 'Flow Rate', value: '93.3% in control' },
       ],
-      calculation: 'Average = (96.7 + 100 + 95 + 98.3 + 93.3 + 98.3) / 6',
-      result: '96.9%'
+      calculation: 'Average = (96.7 + 100 + 93.3) / 3',
+      result: '96.7%',
     },
-    increasingFactors: [
-      'Well-tuned PID controller parameters',
-      'High-quality, calibrated sensors and instruments',
-      'Preventive maintenance preventing equipment drift',
-      'Automated control systems vs. manual adjustments',
-      'Isolation from external disturbances (ambient conditions)',
-      'Fast control loop response times'
-    ],
-    decreasingFactors: [
-      'Sensor drift or calibration errors',
-      'Worn equipment (valves, actuators, heaters)',
-      'Manual operator interventions',
-      'External disturbances (power fluctuations, ambient temp changes)',
-      'Poorly tuned control logic',
-      'Material or feedstock variability'
-    ],
     benchmarkRange: 'Pharmaceutical process validation target: >95% (best-in-class: 98%+)',
     influencingParameters: [
       'Temperature control loop performance',
       'Pressure regulation accuracy',
-      'pH buffer and control response',
-      'Motor speed control (mixers, agitators)',
       'Flow rate valve control',
-      'Humidity conditioning system performance'
+      'Sensor drift or calibration errors',
     ],
-    digitalTwinNote: 'A real Digital Twin would calculate process stability from: (1) High-frequency sensor data (1-second intervals for temperature, pressure, pH, etc.), (2) Control system setpoints and actual values, (3) Statistical Process Control (SPC) charts tracking variation over time. Predictive analytics would alert operators to stability degradation trends before they cause quality issues.',
-    category: 'performance'
+    category: 'performance',
   },
 
   cycleTime: {
     id: 'cycleTime',
     name: 'Cycle Time / Batch Duration',
     shortName: 'Cycle Time',
-    definition: 'Cycle Time is the total elapsed time from batch start to completion. It includes all process stages: mixing, granulation, drying, compression, and packaging. Shorter cycle time means higher throughput and production capacity.',
-    importance: 'Cycle time directly determines production capacity and customer delivery speed. Reducing cycle time without sacrificing quality increases output, lowers cost per unit, and improves responsiveness to demand. It\'s a key lever for operational efficiency.',
+    definition: 'Cycle Time is the total elapsed time from batch start to completion. Shorter cycle time (without sacrificing quality) means more throughput and lower cost per batch.',
     formula: 'Cycle Time = Batch End Time - Batch Start Time',
     exampleCalculation: {
       inputs: [
-        { label: 'Mixing Stage', value: '25 minutes' },
-        { label: 'Granulation Stage', value: '180 minutes' },
-        { label: 'Drying Stage', value: '270 minutes' },
-        { label: 'Compression Stage', value: '240 minutes' },
-        { label: 'Packaging Stage', value: '45 minutes' }
+        { label: 'Batch Duration', value: '400 minutes' },
       ],
-      calculation: 'Total = 25 + 180 + 270 + 240 + 45',
-      result: '760 minutes = 12.67 hours'
+      calculation: 'Cycle Time = 400 / 60',
+      result: '6.67 hrs',
     },
-    increasingFactors: [
-      'Optimized equipment speeds (faster mixing, drying)',
-      'Parallel processing where possible',
-      'Reduced changeover and setup times',
-      'Elimination of waiting time between stages',
-      'Automated material handling and transfers',
-      'Pre-qualified process parameters reducing trial-and-error'
-    ],
-    decreasingFactors: [
-      'Conservative processing speeds (slower to ensure quality)',
-      'Equipment downtime and breakdowns',
-      'Waiting for quality approvals between stages',
-      'Manual material handling and transfers',
-      'Changeover time for multi-product lines',
-      'Process deviations requiring investigation or rework'
-    ],
     benchmarkRange: 'Varies by product: Tablets 8-16 hrs, Capsules 10-20 hrs, Sterile products 24-72 hrs',
     influencingParameters: [
-      'Mixing speed and duration',
-      'Drying temperature (higher = faster but quality risk)',
-      'Granulation liquid addition rate',
-      'Compression turret speed (tablets/minute)',
-      'Material transfer methods (pneumatic vs. manual)',
-      'In-process testing and hold times'
+      'Drying temperature and duration',
+      'Equipment downtime or breakdowns',
+      'Process deviations requiring investigation',
     ],
-    digitalTwinNote: 'A real Digital Twin would track cycle time from: (1) Batch execution system timestamps (start/end of each stage), (2) Equipment state transitions (idle → running → complete), (3) Material tracking through each process step. ML models would predict remaining cycle time and identify bottleneck stages dynamically.',
-    category: 'performance'
+    category: 'performance',
   },
 
   sec: {
     id: 'sec',
     name: 'Specific Energy Consumption (SEC)',
     shortName: 'SEC',
-    definition: 'SEC measures the energy (electricity) consumed per kilogram of finished product. It\'s a key sustainability and cost metric showing energy efficiency of the manufacturing process.',
-    importance: 'Energy costs are a significant operating expense (5-15% of production cost). Lower SEC reduces costs, carbon footprint, and environmental impact. It\'s increasingly important for corporate sustainability goals and regulatory carbon reporting.',
-    formula: 'SEC = Total Energy Consumed (kWh) / Total Product Output (kg)',
+    definition: 'SEC is the energy consumed per kilogram of finished product. It\'s the key efficiency metric for both operating cost and sustainability reporting.',
+    formula: 'SEC = Total Energy Consumed (kWh) / Actual Output (kg)',
     exampleCalculation: {
       inputs: [
-        { label: 'Mixer Energy', value: '80 kWh' },
-        { label: 'Dryer Energy', value: '120 kWh' },
-        { label: 'Compressor Energy', value: '25 kWh' },
-        { label: 'HVAC Energy', value: '15 kWh' },
         { label: 'Total Energy', value: '240 kWh' },
-        { label: 'Batch Output', value: '150 kg tablets' }
+        { label: 'Actual Output', value: '150 kg' },
       ],
-      calculation: 'SEC = 240 kWh / 150 kg',
-      result: '1.6 kWh/kg'
+      calculation: 'SEC = 240 / 150',
+      result: '1.6 kWh/kg',
     },
-    increasingFactors: [
-      'Energy-efficient equipment (variable frequency drives)',
-      'Optimized drying temperature and time',
-      'Heat recovery systems',
-      'Larger batch sizes (fixed energy spread over more output)',
-      'Equipment maintenance reducing friction and inefficiency',
-      'Idle equipment powered down when not in use'
-    ],
-    decreasingFactors: [
-      'Inefficient or old equipment',
-      'Excessive drying time or temperature',
-      'Small batch sizes (high fixed energy per unit)',
-      'Equipment running idle or underutilized',
-      'Compressed air leaks and pneumatic losses',
-      'Poor insulation leading to heat loss'
-    ],
     benchmarkRange: 'Pharmaceutical manufacturing: 0.8-2.5 kWh/kg (depends on product complexity)',
     influencingParameters: [
       'Drying temperature and duration (major energy consumer)',
-      'Mixing intensity and time',
-      'HVAC requirements (cleanroom classification)',
-      'Compressed air usage (pneumatic conveyors, actuators)',
-      'Batch size (economies of scale)',
-      'Equipment utilization rate'
+      'Batch duration',
+      'Process instability (drives corrective energy use)',
     ],
-    digitalTwinNote: 'A real Digital Twin would calculate SEC from: (1) Power meters on all major equipment (mixers, dryers, compressors, HVAC), (2) Batch production records showing output weight, (3) Facility-level energy management systems. Predictive models would optimize process parameters to minimize energy use while maintaining quality.',
-    category: 'energy'
+    category: 'energy',
   },
 
   plantPerformance: {
     id: 'plantPerformance',
     name: 'Plant Performance',
     shortName: 'Plant Performance',
-    definition: 'Plant Performance is a high-level score measuring overall facility operational efficiency. It combines OEE across all lines, schedule adherence, resource utilization, and quality compliance into a single executive metric.',
-    importance: 'Plant Performance gives leadership a single number to understand facility health. It drives strategic decisions on capacity investments, process improvements, and resource allocation. It\'s used in executive dashboards and quarterly business reviews.',
-    formula: 'Plant Performance = Weighted Average of (OEE, Schedule Adherence, Utilization, Quality Compliance)',
+    definition: 'Plant Performance is a rollup score combining OEE, Quality Score, and Process Stability across a plant\'s batches. It gives leadership one number to gauge overall facility health.',
+    formula: 'Plant Performance = Average(OEE, Quality Score, Process Stability)',
     exampleCalculation: {
       inputs: [
-        { label: 'Average OEE Across All Lines', value: '90% (weight: 40%)' },
-        { label: 'Schedule Adherence', value: '96% batches on time (weight: 30%)' },
-        { label: 'Equipment Utilization', value: '94% capacity used (weight: 20%)' },
-        { label: 'Quality Compliance Rate', value: '97% batches passed (weight: 10%)' }
+        { label: 'Average OEE', value: '90%' },
+        { label: 'Average Quality Score', value: '96%' },
+        { label: 'Average Process Stability', value: '94%' },
       ],
-      calculation: 'Plant Performance = (90×0.4) + (96×0.3) + (94×0.2) + (97×0.1)',
-      result: '92.7%'
+      calculation: 'Plant Performance = (90 + 96 + 94) / 3',
+      result: '93.3%',
     },
-    increasingFactors: [
-      'High OEE across all production lines',
-      'On-time batch completions meeting demand',
-      'Maximized equipment utilization',
-      'Minimal quality failures and rework',
-      'Effective maintenance programs',
-      'Cross-functional collaboration and continuous improvement'
-    ],
-    decreasingFactors: [
-      'Unplanned downtime affecting multiple lines',
-      'Missed production schedules and backorders',
-      'Underutilized capacity and idle equipment',
-      'Quality problems causing batch rejections',
-      'Resource constraints (materials, labor, utilities)',
-      'Poor coordination between shifts or departments'
-    ],
     benchmarkRange: 'Best-in-class plants: 90%+, Average: 75-85%, Needs improvement: <70%',
     influencingParameters: [
-      'Individual line OEE performance',
-      'Production schedule complexity and changes',
-      'Material availability and supply chain',
-      'Labor availability and skill level',
-      'Preventive maintenance effectiveness',
-      'Quality system capability (Cpk, first-pass yield)'
+      'Individual batch OEE performance',
+      'Batch quality outcomes across the plant',
+      'Process stability consistency across batches',
     ],
-    digitalTwinNote: 'A real Digital Twin would aggregate plant performance from: (1) MES/ERP systems tracking all batch schedules and completions, (2) Equipment state across all lines, (3) Quality management system pass/fail rates, (4) Resource planning systems. Executive dashboards would drill down from plant-level to line-level to batch-level issues.',
-    category: 'performance'
+    category: 'performance',
   },
 
   goldenBatchSimilarity: {
     id: 'goldenBatchSimilarity',
     name: 'Golden Batch Similarity',
     shortName: 'Similarity',
-    definition: 'Golden Batch Similarity measures how closely a current batch follows the process trajectory of the ideal "Golden Batch" reference. It compares parameter profiles, timing, and quality attributes to the best-ever batch.',
-    importance: 'Replicating successful batches is key to consistent quality and efficiency. High similarity means operators are following proven best practices. Low similarity indicates deviations that may lead to quality or efficiency problems.',
-    formula: 'Similarity = Statistical comparison of (Parameter Trajectories + Quality Attributes + Process Events)',
+    definition: 'Golden Batch Similarity measures how closely a batch\'s process trajectory tracks the ideal Golden Batch reference. Higher similarity means the batch followed proven, validated conditions.',
+    formula: 'Similarity = 100 × (1 - Mean Deviation from Golden Batch / Control Band Width), averaged across parameters',
     exampleCalculation: {
       inputs: [
-        { label: 'Temperature Profile Match', value: '97%' },
-        { label: 'Pressure Profile Match', value: '95%' },
-        { label: 'Mixing Speed Profile Match', value: '98%' },
-        { label: 'Quality Attribute Match', value: '96%' },
-        { label: 'Process Timing Match', value: '94%' }
+        { label: 'Temperature Match', value: '97%' },
+        { label: 'Pressure Match', value: '95%' },
+        { label: 'Flow Rate Match', value: '94%' },
       ],
-      calculation: 'Average similarity = (97 + 95 + 98 + 96 + 94) / 5',
-      result: '96.0%'
+      calculation: 'Average similarity = (97 + 95 + 94) / 3',
+      result: '95.3%',
     },
-    increasingFactors: [
-      'Strict adherence to Golden Batch setpoints',
-      'Automated control systems following reference recipes',
-      'Consistent raw material quality',
-      'Equipment in same condition as Golden Batch run',
-      'Similar environmental conditions (temperature, humidity)',
-      'Experienced operators familiar with process'
-    ],
-    decreasingFactors: [
-      'Manual overrides deviating from Golden Batch recipe',
-      'Equipment degradation or different equipment used',
-      'Raw material variability from Golden Batch',
-      'Environmental changes (seasonal, facility)',
-      'Different operators with varying practices',
-      'Process timing differences'
-    ],
     benchmarkRange: 'Target: >95% similarity for validated processes, >90% acceptable, <85% investigate',
     influencingParameters: [
       'Process parameter trajectories vs. Golden Batch',
-      'Sequence and timing of process stages',
-      'Raw material properties (particle size, moisture)',
-      'Equipment calibration and condition',
-      'Operator actions and interventions',
-      'Environmental factors (ambient temperature, humidity)'
+      'Raw material and equipment consistency',
+      'Operator adherence to setpoints',
     ],
-    digitalTwinNote: 'A real Digital Twin would calculate similarity using: (1) Time-series comparison algorithms (Dynamic Time Warping, correlation) on all sensor data, (2) Quality attribute distance metrics, (3) Process event sequence matching. ML models would provide real-time similarity scores during batch execution to alert when deviating from Golden Batch.',
-    category: 'similarity'
-  }
+    category: 'similarity',
+  },
 };
+
+// Builds the "Current Batch Calculation" block from a real BatchKPIs row - used
+// in place of the static exampleCalculation above whenever a batch is selected,
+// so the modal shows this batch's actual numbers instead of a generic example.
+export function buildCurrentCalculation(
+  kpiId: string,
+  kpis: BatchKPIs,
+): KPIDefinition['exampleCalculation'] | undefined {
+  switch (kpiId) {
+    case 'yield':
+      return {
+        inputs: [
+          { label: 'Theoretical Output', value: `${kpis.theoretical_output_kg.toFixed(0)} kg` },
+          { label: 'Actual Output', value: `${kpis.actual_output_kg.toFixed(1)} kg` },
+        ],
+        calculation: `Yield = ${kpis.actual_output_kg.toFixed(1)} / ${kpis.theoretical_output_kg.toFixed(0)} × 100`,
+        result: `${kpis.yield_pct.toFixed(1)}%`,
+      };
+    case 'assay':
+      return {
+        inputs: [
+          { label: 'Target (Label Claim)', value: '100.0%' },
+          { label: 'Measured This Batch', value: `${kpis.assay_pct.toFixed(1)}%` },
+        ],
+        calculation: `Assay % = ${kpis.assay_pct.toFixed(1)} / 100.0 × 100`,
+        result: `${kpis.assay_pct.toFixed(1)}%`,
+      };
+    case 'qualityScore':
+      return {
+        inputs: [
+          { label: 'Assay', value: `${kpis.assay_pct.toFixed(1)}%` },
+          { label: 'Target', value: '100.0%' },
+        ],
+        calculation: `Quality Score = 100 × (1 - |${kpis.assay_pct.toFixed(1)} - 100| / 10)`,
+        result: `${kpis.quality_score_pct.toFixed(1)}%`,
+      };
+    case 'oee':
+      return {
+        inputs: [
+          { label: 'Availability', value: `${kpis.oee_availability_pct.toFixed(1)}%` },
+          { label: 'Performance', value: `${kpis.oee_performance_pct.toFixed(1)}%` },
+          { label: 'Quality', value: `${kpis.oee_quality_pct.toFixed(1)}%` },
+        ],
+        calculation: `OEE = ${kpis.oee_availability_pct.toFixed(1)} × ${kpis.oee_performance_pct.toFixed(1)} × ${kpis.oee_quality_pct.toFixed(1)} / 10000`,
+        result: `${kpis.oee_pct.toFixed(1)}%`,
+      };
+    case 'sec':
+      return {
+        inputs: [
+          { label: 'Total Energy', value: `${kpis.total_energy_kwh.toFixed(0)} kWh` },
+          { label: 'Actual Output', value: `${kpis.actual_output_kg.toFixed(1)} kg` },
+        ],
+        calculation: `SEC = ${kpis.total_energy_kwh.toFixed(0)} / ${kpis.actual_output_kg.toFixed(1)}`,
+        result: `${kpis.sec_kwh_per_kg.toFixed(2)} kWh/kg`,
+      };
+    case 'processStability':
+      return {
+        inputs: [
+          { label: 'Temperature', value: `${kpis.process_stability_in_control_pct_temperature.toFixed(1)}% in control` },
+          { label: 'Process Pressure', value: `${kpis.process_stability_in_control_pct_process_pressure.toFixed(1)}% in control` },
+          { label: 'Flow Rate', value: `${kpis.process_stability_in_control_pct_flow_rate.toFixed(1)}% in control` },
+        ],
+        calculation: `Average = (${kpis.process_stability_in_control_pct_temperature.toFixed(1)} + ${kpis.process_stability_in_control_pct_process_pressure.toFixed(1)} + ${kpis.process_stability_in_control_pct_flow_rate.toFixed(1)}) / 3`,
+        result: `${kpis.process_stability_pct.toFixed(1)}%`,
+      };
+    case 'cycleTime':
+      return {
+        inputs: [
+          { label: 'Batch Duration', value: `${Math.round(kpis.cycle_time_hrs * 60)} minutes` },
+        ],
+        calculation: `Cycle Time = ${Math.round(kpis.cycle_time_hrs * 60)} / 60`,
+        result: `${kpis.cycle_time_hrs.toFixed(2)} hrs`,
+      };
+    default:
+      return undefined;
+  }
+}
 
 // Helper function to get KPI definition by ID
 export function getKPIDefinition(kpiId: string): KPIDefinition | undefined {

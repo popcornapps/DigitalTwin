@@ -115,6 +115,9 @@ export interface BatchKPIs {
   golden_batch_similarity_pct_process_pressure: number;
   golden_batch_similarity_pct_flow_rate: number;
   fault_onset_elapsed_minutes: number | null;
+  theoretical_output_kg: number;
+  actual_output_kg: number;
+  assay_pct: number;
   yield_pct: number;
   quality_score_pct: number;
   oee_availability_pct: number;

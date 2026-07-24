@@ -9,32 +9,117 @@ import {
   Check,
   Loader2,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { KPIInfoModal } from '../components/KPIInfoModal';
-import { getKPIDefinition } from '../lib/kpiDefinitions';
-import { fetchBatchSummary, fetchTimeline, fetchParameterConfig, fetchBatchKPIs, GOLDEN_BATCH_ID } from '../lib/api';
+import { getKPIDefinition, buildCurrentCalculation } from '../lib/kpiDefinitions';
+import { fetchBatchSummary, fetchTimeline, fetchParameterConfig, fetchBatchKPIs, fetchAllBatchKPIs, GOLDEN_BATCH_ID } from '../lib/api';
 import type { BatchSummary, TimelineResponse, ParameterConfigEntry, BatchKPIs } from '../lib/api';
 
-// Not sourced from any API field yet - carried over from the original
-// per-parameter design as a stable classification label, not invented data.
-const IMPORTANCE_BY_PARAM: Record<string, string> = {
+// Predefined engineering metadata - how important each parameter is to the
+// drying phase and product quality. Not derived from telemetry or statistics.
+const CRITICALITY_BY_PARAM: Record<string, string> = {
   temperature: 'Critical',
   process_pressure: 'Critical',
-  flow_rate: 'Standard',
-  agitator_rpm: 'Critical',
+  flow_rate: 'High',
+  agitator_rpm: 'Medium',
 };
 
-// Cosmetic checklist text - no real dataset source, left unchanged per scope.
-const selectionReasons = [
-  { title: 'Highest Yield', desc: 'Overall yield reached 99.2%, minimizing material waste and raw ingredient scrap to near-zero levels.' },
-  { title: 'Highest Quality Score', desc: 'Critical quality attributes averaged a consistent 99.5% purity with zero Out-of-Specification (OOS) occurrences.' },
-  { title: 'Lowest Cycle Time', desc: 'Granulation and final drying steps completed with optimal process throughput efficiency.' },
-  { title: 'Lowest Energy Consumption', desc: 'Process energy requirement was 12% lower than average runs due to optimized temperature ramps.' },
-  { title: 'Stable Process Parameters', desc: 'Critical variables (inlet temperature, feed pressures, speeds) stayed within ±1% of nominal targets.' },
-  { title: 'Zero Critical Deviations', desc: 'No system alarms, critical anomalies, or safety violations were triggered during execution.' },
-  { title: 'Passed All Quality Tests', desc: 'Full compliance across all target granule sizes, dissolution profiles, and assay stability specifications.' },
-];
+const PROCESS_CRITICALITY_TOOLTIP =
+  'Engineering assessment of how important each parameter is to maintaining process performance and product quality during the drying phase. This is predefined process metadata and is not calculated from the selected Golden Batch.';
+
+// Every reason below is computed from this batch's real KPIs (and, where a
+// comparison is meaningful, its real percentile rank against every other
+// batch) - not asserted text. A reason is only included when its underlying
+// number actually clears a defensible bar, so "why this is the golden batch"
+// never claims more than the data supports. Deliberately no "Highest
+// Yield"/"Lowest Energy" style #1 claims - the KPI formulas are identical for
+// every batch, so those claims would frequently be false (verified against
+// the real dataset: this batch currently ranks outside the top 25 on both
+// Yield and Energy). The honest, still-compelling story is "excellent and
+// well-controlled," not "wins every category."
+function buildGoldenBatchReasons(
+  kpis: BatchKPIs,
+  summary: BatchSummary,
+  allKpis: BatchKPIs[],
+): { title: string; desc: string }[] {
+  const reasons: { title: string; desc: string }[] = [];
+
+  // % of OTHER batches this batch's value beats (lowerIsBetter flips the
+  // comparison direction for metrics like energy). null if no population data
+  // was available yet (e.g. the all-batches fetch failed) - callers fall back
+  // to plain, non-comparative wording in that case.
+  const others = allKpis.filter((b) => b.batch_id !== kpis.batch_id);
+  const percentile = (key: keyof BatchKPIs, lowerIsBetter = false): number | null => {
+    if (others.length === 0) return null;
+    const value = kpis[key] as number;
+    const beaten = others.filter((b) => {
+      const v = b[key] as number;
+      return lowerIsBetter ? v > value : v < value;
+    }).length;
+    return Math.round((beaten / others.length) * 100);
+  };
+
+  // Process Stability - benchmark per kpiDefinitions.ts: >95% target, 98%+ best-in-class.
+  if (kpis.process_stability_pct >= 95) {
+    const pct = kpis.process_stability_pct;
+    reasons.push({
+      title: pct >= 99.95 ? '100% Process Stability' : `${pct.toFixed(1)}% Process Stability`,
+      desc: `Temperature, Process Pressure, and Flow Rate stayed within their control limits ${pct.toFixed(1)}% of the steady-state drying window.`,
+    });
+  }
+
+  // Zero Critical Deviations - real ground-truth label + real fault-onset check, not an assertion.
+  if (summary.ground_truth_severity === 'Normal' && kpis.fault_onset_elapsed_minutes === null) {
+    reasons.push({
+      title: 'Zero Critical Deviations',
+      desc: 'No process parameter left its control band at any point during the batch, per its own recorded telemetry.',
+    });
+  }
+
+  // Yield - benchmark per kpiDefinitions.ts: 96-99.5%, 99%+ for high-value products.
+  if (kpis.yield_pct >= 97) {
+    const pct = percentile('yield_pct');
+    reasons.push({
+      title: 'Excellent Yield',
+      desc: `${kpis.actual_output_kg.toFixed(1)} kg from a ${kpis.theoretical_output_kg.toFixed(0)} kg theoretical output (${kpis.yield_pct.toFixed(1)}%)`
+        + (pct !== null ? `, better than ${pct}% of all batches.` : '.'),
+    });
+  }
+
+  // Quality (Assay) - real spec check: 95-105% of label claim, target 100%.
+  if (kpis.assay_pct >= 95 && kpis.assay_pct <= 105) {
+    const pct = percentile('quality_score_pct');
+    reasons.push({
+      title: 'Excellent Quality (Assay In Spec)',
+      desc: `Assay measured ${kpis.assay_pct.toFixed(1)}% of label claim, within the 95-105% specification (target 100%)`
+        + (pct !== null ? ` - Quality Score better than ${pct}% of all batches.` : '.'),
+    });
+  }
+
+  // OEE - benchmark per kpiDefinitions.ts: 85%+ world-class.
+  if (kpis.oee_pct >= 85) {
+    const pct = percentile('oee_pct');
+    reasons.push({
+      title: 'Strong Overall OEE',
+      desc: `${kpis.oee_pct.toFixed(1)}% OEE (Availability ${kpis.oee_availability_pct.toFixed(1)}% × Performance ${kpis.oee_performance_pct.toFixed(1)}% × Quality ${kpis.oee_quality_pct.toFixed(1)}%)`
+        + (pct !== null ? `, better than ${pct}% of all batches.` : '.'),
+    });
+  }
+
+  // Energy - lower is better; only claimed when this batch genuinely beats
+  // at least half the population, and phrased as a percentile, never "Lowest".
+  const energyPct = percentile('total_energy_kwh', true);
+  if (energyPct !== null && energyPct >= 50) {
+    reasons.push({
+      title: 'Efficient Energy Usage',
+      desc: `${kpis.total_energy_kwh.toFixed(0)} kWh total (${kpis.sec_kwh_per_kg.toFixed(2)} kWh/kg) - more efficient than ${energyPct}% of all batches.`,
+    });
+  }
+
+  return reasons;
+}
 
 const kpiIdMap: Record<string, string> = {
   'Yield': 'yield',
@@ -52,6 +137,7 @@ export default function GoldenBatch() {
   const [timeline, setTimeline] = useState<TimelineResponse | null>(null);
   const [paramConfig, setParamConfig] = useState<ParameterConfigEntry[]>([]);
   const [kpis, setKpis] = useState<BatchKPIs | null>(null);
+  const [allKpis, setAllKpis] = useState<BatchKPIs[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +163,17 @@ export default function GoldenBatch() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    // Fetched independently of the core page data - only used to turn "Why
+    // This Batch Was Selected" into percentile comparisons. A hiccup here
+    // shouldn't block the rest of the page; the reasons below just fall back
+    // to non-comparative wording if this never arrives.
+    fetchAllBatchKPIs()
+      .then((data) => {
+        if (!cancelled) setAllKpis(data);
+      })
+      .catch(() => {
+        if (!cancelled) setAllKpis([]);
       });
     return () => {
       cancelled = true;
@@ -108,6 +205,7 @@ export default function GoldenBatch() {
 
   const durationHrs = `${(summary.batch_duration_minutes / 60).toFixed(2)} hrs`;
   const manufacturingDate = summary.batch_start_datetime.slice(0, 10);
+  const goldenBatchReasons = buildGoldenBatchReasons(kpis, summary, allKpis);
 
   // Averaging across the whole batch (dispensing/mixing/cooling included, where
   // these parameters are legitimately near-zero) would dilute the value into
@@ -121,27 +219,40 @@ export default function GoldenBatch() {
   const optimalParams = paramConfig.map((cfg) => {
     const values = steadyStatePoints.map((p) => p[cfg.key as keyof typeof p] as number);
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    // Real min/max actually observed in THIS batch's own steady-state window -
+    // replaces the old fixed parameter_config.csv band, which was a shared
+    // static reference applied identically to every batch, not derived from
+    // the golden batch's own data at all.
+    const min = Math.min(...values);
+    const max = Math.max(...values);
     return {
       key: cfg.key,
       name: cfg.label,
       value: `${avg.toFixed(1)} ${cfg.unit}`,
-      range: `${cfg.lower_limit} - ${cfg.upper_limit} ${cfg.unit}`,
-      importance: IMPORTANCE_BY_PARAM[cfg.key] ?? 'Standard',
+      range: `${min.toFixed(1)} - ${max.toFixed(1)} ${cfg.unit}`,
+      criticality: CRITICALITY_BY_PARAM[cfg.key] ?? 'Medium',
     };
   });
 
-  // synthetic=true only for the two fields that are still batch-level-constant
-  // draws with no grounding in this batch's own real data (see
-  // docs/batch-kpis-prediction-readiness-review.md). Energy/Process
-  // Stability/OEE are real, derived, or a formula over real+derived inputs,
-  // so they no longer carry the caveat.
+  // All six are now real/derived from this batch's own data (actual_output_kg,
+  // assay_pct, process_stability_pct, etc.) - none are independent random
+  // draws anymore, so none carry a "synthetic" caveat. `detail` surfaces the
+  // real inputs behind the headline ratio where that's useful context.
   const performanceKPIs = [
-    { label: 'Yield', value: `${kpis.yield_pct.toFixed(1)}%`, icon: <Activity className="h-5 w-5 text-emerald-600" />, color: 'bg-emerald-50', synthetic: true },
-    { label: 'Quality Score', value: `${kpis.quality_score_pct.toFixed(1)}%`, icon: <ShieldCheck className="h-5 w-5 text-rose-600" />, color: 'bg-rose-50', synthetic: true },
-    { label: 'Cycle Time', value: durationHrs, icon: <Clock className="h-5 w-5 text-blue-600" />, color: 'bg-blue-50', synthetic: false },
-    { label: 'Energy Consumption', value: `${kpis.total_energy_kwh.toFixed(0)} kWh`, icon: <Flame className="h-5 w-5 text-orange-600" />, color: 'bg-orange-50', synthetic: false },
-    { label: 'Process Stability', value: `${kpis.process_stability_pct.toFixed(1)}%`, icon: <Award className="h-5 w-5 text-teal-600" />, color: 'bg-teal-50', synthetic: false },
-    { label: 'OEE', value: `${kpis.oee_pct.toFixed(1)}%`, icon: <Activity className="h-5 w-5 text-indigo-600" />, color: 'bg-indigo-50', synthetic: false },
+    {
+      label: 'Yield', value: `${kpis.yield_pct.toFixed(1)}%`,
+      detail: `${kpis.actual_output_kg.toFixed(1)} / ${kpis.theoretical_output_kg.toFixed(0)} kg`,
+      icon: <Activity className="h-5 w-5 text-emerald-600" />, color: 'bg-emerald-50',
+    },
+    {
+      label: 'Quality Score', value: `${kpis.quality_score_pct.toFixed(1)}%`,
+      detail: `Assay: ${kpis.assay_pct.toFixed(1)}%`,
+      icon: <ShieldCheck className="h-5 w-5 text-rose-600" />, color: 'bg-rose-50',
+    },
+    { label: 'Cycle Time', value: durationHrs, icon: <Clock className="h-5 w-5 text-blue-600" />, color: 'bg-blue-50' },
+    { label: 'Energy Consumption', value: `${kpis.total_energy_kwh.toFixed(0)} kWh`, icon: <Flame className="h-5 w-5 text-orange-600" />, color: 'bg-orange-50' },
+    { label: 'Process Stability', value: `${kpis.process_stability_pct.toFixed(1)}%`, icon: <Award className="h-5 w-5 text-teal-600" />, color: 'bg-teal-50' },
+    { label: 'OEE', value: `${kpis.oee_pct.toFixed(1)}%`, icon: <Activity className="h-5 w-5 text-indigo-600" />, color: 'bg-indigo-50' },
   ];
 
   return (
@@ -222,7 +333,7 @@ export default function GoldenBatch() {
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900 text-lg">Optimal Process Parameters</h3>
-                <p className="text-xs text-gray-500">Average recorded value and real operating range from the golden batch's own timeline</p>
+                <p className="text-xs text-gray-500">Average recorded value and real observed range from the golden batch's own timeline</p>
               </div>
             </div>
 
@@ -232,8 +343,16 @@ export default function GoldenBatch() {
                   <tr className="text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     <th className="py-2.5">Parameter Name</th>
                     <th className="py-2.5 text-right">Optimal Value</th>
-                    <th className="py-2.5 text-right">Operating Range</th>
-                    <th className="py-2.5 text-right">Classification</th>
+                    <th className="py-2.5 text-right">Observed Range</th>
+                    <th className="py-2.5 text-right">
+                      <span
+                        className="inline-flex items-center gap-1 justify-end cursor-help"
+                        title={PROCESS_CRITICALITY_TOOLTIP}
+                      >
+                        Process Criticality
+                        <Info className="h-3 w-3 text-gray-400" />
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 text-gray-700">
@@ -244,13 +363,13 @@ export default function GoldenBatch() {
                       <td className="py-3 text-right text-gray-500 font-mono text-xs">{param.range}</td>
                       <td className="py-3 text-right">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          param.importance === 'Critical'
+                          param.criticality === 'Critical'
                             ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                            : param.importance === 'Important'
+                            : param.criticality === 'High'
                             ? 'bg-amber-50 text-amber-700 border border-amber-100'
                             : 'bg-slate-50 text-slate-600 border border-slate-100'
                         }`}>
-                          {param.importance}
+                          {param.criticality}
                         </span>
                       </td>
                     </tr>
@@ -259,7 +378,7 @@ export default function GoldenBatch() {
               </table>
             </div>
             <p className="text-[10px] text-gray-400 mt-3">
-              Classification labels are a static reference tag, not yet sourced from an API field.
+              Process Criticality is predefined engineering metadata, not calculated from this batch's data.
             </p>
           </div>
 
@@ -282,11 +401,8 @@ export default function GoldenBatch() {
                     onClick={() => setActiveKPIId(kpiId)}
                     className="text-left bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between hover:bg-white hover:shadow-sm transition-all cursor-pointer hover:ring-2 hover:ring-indigo-100"
                   >
-                    <span className="text-xs font-semibold text-gray-500 tracking-wide uppercase flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-gray-500 tracking-wide uppercase">
                       {kpi.label}
-                      {kpi.synthetic && (
-                        <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1 py-px normal-case">synthetic</span>
-                      )}
                     </span>
                     <div className="flex items-center justify-between mt-3">
                       <div className={`p-2 rounded-lg ${kpi.color}`}>
@@ -294,6 +410,9 @@ export default function GoldenBatch() {
                       </div>
                       <span className="text-lg font-bold text-gray-900">{kpi.value}</span>
                     </div>
+                    {'detail' in kpi && (
+                      <span className="text-[10px] font-medium text-gray-400 mt-1">{kpi.detail}</span>
+                    )}
                     <span className="text-[10px] font-semibold text-indigo-400 mt-2">Click for details</span>
                   </button>
                 );
@@ -307,19 +426,29 @@ export default function GoldenBatch() {
               <ShieldCheck className="h-5 w-5 mr-2 text-emerald-600" />
               Why This Batch Was Selected
             </h3>
-            <div className="space-y-4">
-              {selectionReasons.map((item, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <div className="p-1 bg-emerald-50 rounded-full text-emerald-600 mt-0.5 flex-shrink-0">
-                    <Check className="h-3.5 w-3.5 stroke-[3]" />
+            {goldenBatchReasons.length > 0 ? (
+              <div className="space-y-4">
+                {goldenBatchReasons.map((item, index) => (
+                  <div key={index} className="flex items-start gap-3">
+                    <div className="p-1 bg-emerald-50 rounded-full text-emerald-600 mt-0.5 flex-shrink-0">
+                      <Check className="h-3.5 w-3.5 stroke-[3]" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-800">{item.title}</h4>
+                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-800">{item.title}</h4>
-                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                This batch's real KPIs don't yet clear the bar on any tracked strength.
+              </p>
+            )}
+            <p className="text-[10px] text-gray-400 mt-4">
+              This batch is the manufacturing reference because it's excellent and well-controlled overall - not
+              necessarily the single best performer on every individual KPI.
+            </p>
           </div>
 
         </div>
@@ -330,6 +459,7 @@ export default function GoldenBatch() {
         <KPIInfoModal
           kpiDefinition={getKPIDefinition(activeKPIId)!}
           currentValue={performanceKPIs.find((k) => kpiIdMap[k.label] === activeKPIId)?.value}
+          currentCalculation={buildCurrentCalculation(activeKPIId, kpis)}
           onClose={() => setActiveKPIId(null)}
         />
       )}
