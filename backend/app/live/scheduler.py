@@ -18,7 +18,7 @@ async def _tick_loop() -> None:
                 ml_bridge.refresh_prediction(batch)
                 deviation_agent.assess(batch)
                 for assessment in batch.latest_assessments:
-                    alert_registry.sync_from_assessment(batch, assessment)
+                    await alert_registry.sync_from_assessment(batch, assessment)
 
 
 def start() -> asyncio.Task:

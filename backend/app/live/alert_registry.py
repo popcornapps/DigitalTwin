@@ -26,6 +26,7 @@ objects as input rather than importing anything from the historical/ML plane
 itself. llm_agent.py has the same property (zero historical/ML imports), so
 this file still never touches app.state/app.services/the trained model.
 """
+import asyncio
 import json
 import logging
 from dataclasses import asdict
@@ -129,7 +130,7 @@ class AlertRegistry:
         assessment.recommended_action = reasoning['recommended_action']
         assessment.operational_impact = reasoning['operational_impact']
 
-    def sync_from_assessment(self, batch: RunningBatch, assessment: ParameterAssessment) -> None:
+    async def sync_from_assessment(self, batch: RunningBatch, assessment: ParameterAssessment) -> None:
         existing = self._find_open(batch.running_batch_id, assessment.key)
         is_deviating = assessment.trigger_type is not None
 
@@ -170,12 +171,12 @@ class AlertRegistry:
                 self._persist()
                 return
 
-            reasoning = llm_agent.generate_alert_reasoning(assessment.llm_context or {})
+            reasoning = await asyncio.to_thread(llm_agent.generate_alert_reasoning, assessment.llm_context or {})
             self._apply_reasoning(existing, assessment, reasoning, fingerprint)
             self._persist()
             return
 
-        reasoning = llm_agent.generate_alert_reasoning(assessment.llm_context or {})
+        reasoning = await asyncio.to_thread(llm_agent.generate_alert_reasoning, assessment.llm_context or {})
         alert = DeviationAlert(
             alert_id=self._next_id(),
             running_batch_id=batch.running_batch_id,

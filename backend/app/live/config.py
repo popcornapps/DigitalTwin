@@ -32,12 +32,12 @@ NOMINAL_PHASE_DURATIONS = {
 
 # Named progression-speed presets - real seconds of wall-clock time per
 # simulated minute. 'demo' is slow enough that a trend takes real, watchable
-# time to develop (a ~385-minute batch completes in ~64 real minutes) - meant
+# time to develop (a ~385-minute batch completes in ~39 real minutes) - meant
 # for actually observing a batch and its future predictions play out, not for
 # racing through one. 'accelerated' is the old fast pace, kept for quick
 # smoke-tests where watching a batch finish in real time isn't the point.
 SPEED_PROFILES = {
-    'demo': 10.0,
+    'demo': 6.0,
     'accelerated': 2.0,
 }
 
