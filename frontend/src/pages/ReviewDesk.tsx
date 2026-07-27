@@ -7,7 +7,7 @@ import {
   Info, Activity, Filter, FileText, Zap, AlertTriangle
 } from 'lucide-react';
 
-const ALERTS_POLL_INTERVAL_MS = 5000;
+const ALERTS_POLL_INTERVAL_MS = 3000;
 
 // Urgency (the LLM reasoning layer's operational-priority call, factoring in
 // severity + time-to-breach) maps onto this page's 3-level priority - more

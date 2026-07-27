@@ -15,6 +15,7 @@ import type {
 
 const WARNING_MARGIN_FRACTION = 0.15;
 const LIVE_POLL_INTERVAL_MS = 3000;
+const HISTORY_MINUTES = 10;
 
 type Status = 'normal' | 'warning' | 'critical';
 
@@ -200,6 +201,23 @@ export default function ProcessMonitoring() {
   const points: NormalizedPoint[] = useMemo(() => runningTelemetry?.points ?? [], [runningTelemetry]);
 
   const latestPoint = points.length > 0 ? points[points.length - 1] : null;
+
+  // Same golden(t)+/-margin(t) band used for the param cards above, just
+  // evaluated at an arbitrary historical minute instead of only the latest
+  // one - lets each row of the History table tint its own cells correctly.
+  const statusAt = (point: NormalizedPoint, cfg: ParameterConfigEntry): Status => {
+    const value = point[cfg.key as keyof NormalizedPoint] as number;
+    const golden = goldenPointAt(point.elapsed_minutes);
+    const goldenValue = golden ? (golden[cfg.key as keyof typeof golden] as number) : value;
+    const envelope = envelopeAt(point.elapsed_minutes);
+    const fallbackHalfWidth = (cfg.upper_limit - cfg.lower_limit) / 2;
+    const lowerOffset = envelope ? (envelope[`${cfg.key}_lower_offset` as keyof GoldenEnvelopePoint] as number) : -fallbackHalfWidth;
+    const upperOffset = envelope ? (envelope[`${cfg.key}_upper_offset` as keyof GoldenEnvelopePoint] as number) : fallbackHalfWidth;
+    return classifyStatus(value, goldenValue + lowerOffset, goldenValue + upperOffset);
+  };
+
+  // Newest-first, capped to the last HISTORY_MINUTES readings.
+  const historyRows = useMemo(() => [...points].slice(-HISTORY_MINUTES).reverse(), [points]);
 
   const paramCards: ParamCard[] = useMemo(() => {
     if (!latestPoint || paramConfig.length === 0) return [];
@@ -514,6 +532,50 @@ export default function ProcessMonitoring() {
                 </div>
               </div>
 
+              {/* History table - reference/detail content, paired with
+                  Technical Details below rather than competing for space
+                  in the immediately-visible Agent Assessment column. */}
+              {paramConfig.length > 0 && historyRows.length > 0 && (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <h2 className="text-sm font-semibold text-gray-800 mb-3">
+                    History <span className="text-xs font-normal text-gray-400">(last {HISTORY_MINUTES} min)</span>
+                  </h2>
+                  <div className="overflow-y-auto max-h-72">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="text-gray-400 text-[10px] uppercase tracking-wide">
+                          <th className="text-left font-semibold px-1.5 py-1">Min</th>
+                          {paramConfig.map((cfg) => (
+                            <th key={cfg.key} className="text-right font-semibold px-1.5 py-1">{cfg.label}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historyRows.map((row, idx) => (
+                          <tr key={row.elapsed_minutes} className={idx === 0 ? 'bg-indigo-50' : ''}>
+                            <td className={`px-1.5 py-1 font-medium ${idx === 0 ? 'text-indigo-700' : 'text-gray-500'}`}>{row.elapsed_minutes}</td>
+                            {paramConfig.map((cfg) => {
+                              const status = statusAt(row, cfg);
+                              const value = row[cfg.key as keyof NormalizedPoint] as number;
+                              return (
+                                <td
+                                  key={cfg.key}
+                                  className={`px-1.5 py-1 text-right ${
+                                    status === 'critical' ? 'text-red-600 font-semibold' : status === 'warning' ? 'text-amber-600 font-medium' : 'text-gray-700'
+                                  }`}
+                                >
+                                  {value.toFixed(2)}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                 <button
                   onClick={() => setShowTechnicalDetails((v) => !v)}
@@ -551,7 +613,10 @@ export default function ProcessMonitoring() {
               </div>
             </div>
 
-            {activeAssessment ? (
+            {/* Agent Assessment / What This Means - back in its own column,
+                immediately visible with nothing competing above it. */}
+            <div className="space-y-6">
+              {activeAssessment ? (
               <div className="bg-blue-50/50 rounded-lg shadow-sm border border-blue-100 p-6 h-fit">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -676,6 +741,7 @@ export default function ProcessMonitoring() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         )}
       </div>
