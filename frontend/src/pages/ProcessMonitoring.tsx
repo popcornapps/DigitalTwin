@@ -7,7 +7,7 @@ import {
 import {
   fetchTimeline, fetchParameterConfig, fetchGoldenEnvelope, GOLDEN_BATCH_ID,
   fetchRunningBatches, fetchRunningBatchTelemetry, stopRunningBatch,
-  fetchAiMode, setAiMode,
+  fetchAiMode, setAiMode, fetchTickIntervalSeconds,
 } from '../lib/api';
 import type {
   TimelineResponse, ParameterConfigEntry, GoldenEnvelopePoint,
@@ -132,6 +132,11 @@ export default function ProcessMonitoring() {
   const [aiMode, setAiModeState] = useState<AIMode>('static');
   const [aiModeUpdating, setAiModeUpdating] = useState(false);
 
+  // Real backend tick cadence (seconds of wall-clock time per simulated
+  // minute) - fetched once so the displayed cadence can't drift out of sync
+  // with backend/app/live/config.py's actual speed profile.
+  const [tickIntervalSeconds, setTickIntervalSeconds] = useState<number | null>(null);
+
   const selectedRunningBatch = runningBatches.find((b) => b.running_batch_id === selectedRunningBatchId) ?? null;
 
   useEffect(() => {
@@ -139,6 +144,7 @@ export default function ProcessMonitoring() {
     fetchTimeline(GOLDEN_BATCH_ID).then(setGoldenTimeline).catch(() => setGoldenTimeline(null));
     fetchGoldenEnvelope().then(setGoldenEnvelope).catch(() => setGoldenEnvelope([]));
     fetchAiMode().then((r) => setAiModeState(r.mode)).catch(() => {});
+    fetchTickIntervalSeconds().then((r) => setTickIntervalSeconds(r.tick_interval_seconds)).catch(() => {});
   }, []);
 
   // Running batches list - fetched on mount; also refreshed by each telemetry
@@ -424,9 +430,12 @@ export default function ProcessMonitoring() {
             {selectedRunningBatch && <p className="text-sm text-gray-500">at {selectedRunningBatch.plant}</p>}
           </div>
           {selectedRunningBatch && (
-            <p className="text-xs text-gray-400 mt-1 flex items-center font-medium gap-1.5 flex-wrap">
+            <p className="text-xs text-black mt-1 flex items-center font-medium gap-1.5 flex-wrap">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Simulated live feed
+              {tickIntervalSeconds != null && (
+                <span>· Updates every {Number.isInteger(tickIntervalSeconds) ? tickIntervalSeconds : tickIntervalSeconds.toFixed(1)}s</span>
+              )}
               <span>· {selectedRunningBatch.elapsed_minutes} / {selectedRunningBatch.target_duration_minutes} min</span>
             </p>
           )}

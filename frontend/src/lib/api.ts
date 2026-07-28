@@ -348,3 +348,10 @@ export const fetchAiMode = (): Promise<{ mode: AIMode }> => fetchJson('/settings
 
 export const setAiMode = (mode: AIMode): Promise<{ mode: AIMode }> =>
   postJson('/settings/ai-mode', { mode });
+
+// Real seconds of wall-clock time per simulated minute (see
+// backend/app/live/config.py's TICK_INTERVAL_SECONDS) - fetched rather than
+// hardcoded so the displayed cadence can never drift out of sync with the
+// backend's actual speed profile.
+export const fetchTickIntervalSeconds = (): Promise<{ tick_interval_seconds: number }> =>
+  fetchJson('/settings/tick-interval');
