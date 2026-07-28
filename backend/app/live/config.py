@@ -8,7 +8,7 @@ the historical generator's own source of truth and isn't imported here.
 """
 import os
 
-PLANTS = ['Hyderabad Plant', 'Pune Facility', 'Chennai Plant']
+PLANTS = ['Hyderabad Plant']
 
 PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate', 'agitator_rpm')
 
@@ -85,9 +85,10 @@ NOISE_STD = {
 # each tick (in 1-sim-minute step units) - keeps noise bounded without drift.
 NOISE_REVERSION_RATE = 0.15
 
-# Default seed batches created once at backend startup.
+# Default seed batches created once at backend startup - all at the single
+# supported plant (see PLANTS above); the three scenario profiles still vary.
 DEFAULT_SEED_BATCHES = [
     {'plant': 'Hyderabad Plant', 'scenario_profile': 'Normal', 'drifting_parameter': None},
-    {'plant': 'Pune Facility', 'scenario_profile': 'Warning', 'drifting_parameter': None},
-    {'plant': 'Chennai Plant', 'scenario_profile': 'Critical', 'drifting_parameter': None},
+    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': None},
+    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': None},
 ]
