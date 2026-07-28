@@ -101,6 +101,13 @@ def get_telemetry(running_batch_id: str):
             trigger_explanation=a.trigger_explanation,
             urgency=a.urgency,
             operational_impact=a.operational_impact,
+            root_cause_confidence_pct=a.root_cause_confidence_pct,
+            root_cause_confidence_level=a.root_cause_confidence_level,
+            root_cause_confidence_explanation=a.root_cause_confidence_explanation,
+            recommendation_confidence_pct=a.recommendation_confidence_pct,
+            recommendation_confidence_level=a.recommendation_confidence_level,
+            recommendation_confidence_explanation=a.recommendation_confidence_explanation,
+            reasoning_source=a.reasoning_source,
         )
         for a in batch.latest_assessments
     ]

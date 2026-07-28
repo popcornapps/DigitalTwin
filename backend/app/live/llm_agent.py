@@ -15,6 +15,8 @@ import json
 import logging
 import os
 
+from app.live import ai_mode
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -269,12 +271,24 @@ def _fallback_reasoning(context: dict) -> dict:
 
 
 def generate_alert_reasoning(context: dict) -> dict:
-    """Returns a dict with exactly _OUTPUT_FIELDS. Tries Azure OpenAI first
-    (the primary reasoning path); falls back to a deterministic heuristic on
-    any failure so the operator is never left without guidance."""
+    """Returns a dict with exactly _OUTPUT_FIELDS plus `reasoning_source`
+    ('static' | 'llm') - the one honest record of which path actually
+    produced this text, set here (never guessed downstream) so the UI can
+    show it rather than leaving Static-template and real-LLM output visually
+    indistinguishable. In Static mode (the default - see app.live.ai_mode),
+    always uses the deterministic fallback and never calls out to Azure
+    OpenAI at all, keeping LLM cost fully opt-in. In Agent LLM mode, tries
+    Azure OpenAI first and falls back to the same deterministic heuristic on
+    any failure (client unconfigured, or the call itself errors), so the
+    operator is never left without guidance - `reasoning_source` reports
+    'static' in that failure case too, since that's what actually happened,
+    regardless of which mode was requested."""
+    if ai_mode.get_mode() == ai_mode.STATIC:
+        return {**_fallback_reasoning(context), 'reasoning_source': 'static'}
+
     client = _get_client()
     if client is None:
-        return _fallback_reasoning(context)
+        return {**_fallback_reasoning(context), 'reasoning_source': 'static'}
 
     try:
         # No explicit temperature - some Azure deployments (reasoning-tier
@@ -293,7 +307,7 @@ def generate_alert_reasoning(context: dict) -> dict:
             raise ValueError(f"model returned an invalid urgency value: {parsed.get('urgency')!r}")
         if any(field not in parsed for field in _OUTPUT_FIELDS):
             raise ValueError(f'model response missing required fields: {parsed.keys()}')
-        return parsed
+        return {**parsed, 'reasoning_source': 'llm'}
     except Exception:
         logger.exception('Azure OpenAI call failed for alert reasoning; falling back to deterministic heuristic')
-        return _fallback_reasoning(context)
+        return {**_fallback_reasoning(context), 'reasoning_source': 'static'}

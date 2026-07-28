@@ -30,6 +30,7 @@ import json
 
 from app.config import FAULT_SIGNATURES_PATH, PARAMETER_LABELS, PARAMETER_UNITS
 from app.live import config as live_config
+from app.live.confidence import score_recommendation, score_root_cause
 from app.live.ml_bridge import compute_live_feature_row
 from app.live.models import ParameterAssessment, RunningBatch
 from app.live.service import get_latest_reading
@@ -238,8 +239,12 @@ def assess(batch: RunningBatch) -> None:
 
     for key, info in per_param.items():
         llm_context = None
+        root_cause_confidence = None
+        recommendation_confidence = None
         if info['trigger_type'] is not None:
             root_cause_candidates = _rank_root_cause_candidates(deviating_directions, key)
+            root_cause_confidence = score_root_cause(root_cause_candidates)
+            recommendation_confidence = score_recommendation(root_cause_confidence)
             severity = 'Critical' if 'critical' in (info['current_status'], info['predicted_status'] or '') else 'Warning'
             co_deviating = [
                 f"{per_param[k]['label']} {d}"
@@ -277,6 +282,12 @@ def assess(batch: RunningBatch) -> None:
             recommended_action=None,
             trigger_type=info['trigger_type'],
             llm_context=llm_context,
+            root_cause_confidence_pct=root_cause_confidence['confidence_pct'] if root_cause_confidence else None,
+            root_cause_confidence_level=root_cause_confidence['confidence_level'] if root_cause_confidence else None,
+            root_cause_confidence_explanation=root_cause_confidence['explanation'] if root_cause_confidence else None,
+            recommendation_confidence_pct=recommendation_confidence['confidence_pct'] if recommendation_confidence else None,
+            recommendation_confidence_level=recommendation_confidence['confidence_level'] if recommendation_confidence else None,
+            recommendation_confidence_explanation=recommendation_confidence['explanation'] if recommendation_confidence else None,
         ))
 
     batch.latest_assessments = assessments

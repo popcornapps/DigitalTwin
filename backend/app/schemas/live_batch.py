@@ -56,6 +56,18 @@ class ParameterAssessmentOut(BaseModel):
     trigger_explanation: str | None = None
     urgency: str | None = None
     operational_impact: str | None = None
+    # Deterministic, evidence-based confidence in the diagnosis/action itself
+    # (see app.live.confidence) - distinct from `confidence` above, which is
+    # the ML forecast's own confidence-interval-width confidence.
+    root_cause_confidence_pct: int | None = None
+    root_cause_confidence_level: str | None = None
+    root_cause_confidence_explanation: str | None = None
+    recommendation_confidence_pct: int | None = None
+    recommendation_confidence_level: str | None = None
+    recommendation_confidence_explanation: str | None = None
+    # Which path actually produced the reasoning text above - 'static' or
+    # 'llm' (see app.live.llm_agent.generate_alert_reasoning).
+    reasoning_source: str | None = None
 
 
 class RunningBatchTelemetryResponse(BaseModel):

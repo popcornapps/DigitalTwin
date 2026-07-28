@@ -31,6 +31,22 @@ class ParameterAssessment:
     trigger_explanation: str | None = None
     urgency: str | None = None  # one of live.llm_agent.URGENCY_LEVELS
     operational_impact: str | None = None
+    # Deterministic, evidence-based confidence scores (see app.live.confidence)
+    # - distinct from `confidence` above, which is the ML forecast's own CI-
+    # width confidence. These score how much to trust the diagnosis/action
+    # itself, not the forecast. None until trigger_type is set.
+    root_cause_confidence_pct: int | None = None
+    root_cause_confidence_level: str | None = None  # 'High' | 'Medium' | 'Low'
+    root_cause_confidence_explanation: str | None = None
+    recommendation_confidence_pct: int | None = None
+    recommendation_confidence_level: str | None = None
+    recommendation_confidence_explanation: str | None = None
+    # Which path actually produced alert_summary/.../operational_impact above
+    # - 'static' (deterministic template) or 'llm' (real Azure OpenAI call).
+    # Set once, in app.live.llm_agent.generate_alert_reasoning, never guessed
+    # here - lets the UI show which one actually ran, since both render in
+    # the same shape and are otherwise indistinguishable at a glance.
+    reasoning_source: str | None = None
     # Internal plumbing consumed by alert_registry.sync_from_assessment to
     # decide whether/how to call the LLM - built here where parameter labels,
     # units, and ranked historical candidates are already available. Never
@@ -115,6 +131,20 @@ class DeviationAlert:
     trigger_explanation: str | None = None
     urgency: str | None = None
     operational_impact: str | None = None
+    # Deterministic, evidence-based confidence scores (see app.live.confidence)
+    # - refreshed every tick like time_to_breach_minutes/confidence above
+    # (cheap local computation, not gated behind the LLM re-reasoning check).
+    root_cause_confidence_pct: int | None = None
+    root_cause_confidence_level: str | None = None
+    root_cause_confidence_explanation: str | None = None
+    recommendation_confidence_pct: int | None = None
+    recommendation_confidence_level: str | None = None
+    recommendation_confidence_explanation: str | None = None
+    # Which path actually produced alert_summary/.../operational_impact above
+    # - 'static' or 'llm' (see ParameterAssessment.reasoning_source). Updated
+    # only when the reasoning itself is regenerated (new alert or material
+    # change), same as those fields - not refreshed every tick.
+    reasoning_source: str | None = None
     # The HUMAN's decision - deliberately separate from `status` above: an
     # operator can acknowledge an alert that's still actively deviating, and
     # the agent can resolve an alert nobody ever reviewed. Collapsing these

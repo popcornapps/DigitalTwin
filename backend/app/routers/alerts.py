@@ -32,6 +32,13 @@ def _to_out(alert: DeviationAlert) -> DeviationAlertOut:
         trigger_explanation=alert.trigger_explanation,
         urgency=alert.urgency,
         operational_impact=alert.operational_impact,
+        root_cause_confidence_pct=alert.root_cause_confidence_pct,
+        root_cause_confidence_level=alert.root_cause_confidence_level,
+        root_cause_confidence_explanation=alert.root_cause_confidence_explanation,
+        recommendation_confidence_pct=alert.recommendation_confidence_pct,
+        recommendation_confidence_level=alert.recommendation_confidence_level,
+        recommendation_confidence_explanation=alert.recommendation_confidence_explanation,
+        reasoning_source=alert.reasoning_source,
         human_decision=alert.human_decision,
         human_decision_at=alert.human_decision_at,
     )

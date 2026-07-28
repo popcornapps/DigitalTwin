@@ -119,6 +119,7 @@ class AlertRegistry:
         target.likely_root_cause = reasoning['likely_root_cause']
         target.recommended_action = reasoning['recommended_action']
         target.operational_impact = reasoning['operational_impact']
+        target.reasoning_source = reasoning['reasoning_source']
         target.reasoning_fingerprint = fingerprint
         # Mirror onto the live assessment too, so Process Monitoring (which
         # reads batch.latest_assessments, not the alert) shows the exact same
@@ -129,6 +130,7 @@ class AlertRegistry:
         assessment.likely_root_cause = reasoning['likely_root_cause']
         assessment.recommended_action = reasoning['recommended_action']
         assessment.operational_impact = reasoning['operational_impact']
+        assessment.reasoning_source = reasoning['reasoning_source']
 
     async def sync_from_assessment(self, batch: RunningBatch, assessment: ParameterAssessment) -> None:
         existing = self._find_open(batch.running_batch_id, assessment.key)
@@ -158,6 +160,12 @@ class AlertRegistry:
             existing.predicted_observation = assessment.predicted_observation
             existing.time_to_breach_minutes = assessment.time_to_breach_minutes
             existing.confidence = assessment.confidence
+            existing.root_cause_confidence_pct = assessment.root_cause_confidence_pct
+            existing.root_cause_confidence_level = assessment.root_cause_confidence_level
+            existing.root_cause_confidence_explanation = assessment.root_cause_confidence_explanation
+            existing.recommendation_confidence_pct = assessment.recommendation_confidence_pct
+            existing.recommendation_confidence_level = assessment.recommendation_confidence_level
+            existing.recommendation_confidence_explanation = assessment.recommendation_confidence_explanation
 
             if existing.reasoning_fingerprint == fingerprint:
                 # No material change - keep the persisted narrative stable,
@@ -168,6 +176,7 @@ class AlertRegistry:
                 assessment.likely_root_cause = existing.likely_root_cause
                 assessment.recommended_action = existing.recommended_action
                 assessment.operational_impact = existing.operational_impact
+                assessment.reasoning_source = existing.reasoning_source
                 self._persist()
                 return
 
@@ -193,6 +202,12 @@ class AlertRegistry:
             likely_root_cause=None,
             recommended_action=None,
             status='Open',
+            root_cause_confidence_pct=assessment.root_cause_confidence_pct,
+            root_cause_confidence_level=assessment.root_cause_confidence_level,
+            root_cause_confidence_explanation=assessment.root_cause_confidence_explanation,
+            recommendation_confidence_pct=assessment.recommendation_confidence_pct,
+            recommendation_confidence_level=assessment.recommendation_confidence_level,
+            recommendation_confidence_explanation=assessment.recommendation_confidence_explanation,
         )
         self._apply_reasoning(alert, assessment, reasoning, fingerprint)
         self._alerts[alert.alert_id] = alert
