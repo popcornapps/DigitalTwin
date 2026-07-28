@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Activity, ShieldCheck, Clock, Flame, Award, XCircle, Loader2, AlertTriangle, Radio, ExternalLink, Package, FlaskConical } from 'lucide-react';
+import { Search, Activity, ShieldCheck, Clock, Flame, XCircle, Loader2, AlertTriangle, Radio, ExternalLink, Package, FlaskConical } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { KPIInfoModal } from '../components/KPIInfoModal';
 import { getKPIDefinition, buildCurrentCalculation } from '../lib/kpiDefinitions';
@@ -422,14 +422,6 @@ export default function BatchExplorer() {
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Process</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <KpiCard
-                    label="Process Stability"
-                    value={activeKpis ? `${activeKpis.process_stability_pct.toFixed(1)}%` : '—'}
-                    icon={<Award className="h-5 w-5 text-teal-600" />}
-                    color="bg-teal-50"
-                    onClick={() => setActiveKPIId('processStability')}
-                    hint="Click for details"
-                  />
-                  <KpiCard
                     label="Cycle Time"
                     value={`${cycleTimeHrs} hrs`}
                     icon={<Clock className="h-5 w-5 text-blue-600" />}
@@ -513,7 +505,6 @@ export default function BatchExplorer() {
                 activeKPIId === 'qualityScore' && activeKpis ? `${activeKpis.quality_score_pct.toFixed(1)}%` :
                 activeKPIId === 'assay' && activeKpis ? `${activeKpis.assay_pct.toFixed(1)}%` :
                 activeKPIId === 'sec' && activeKpis ? `${activeKpis.sec_kwh_per_kg.toFixed(2)} kWh/kg` :
-                activeKPIId === 'processStability' && activeKpis ? `${activeKpis.process_stability_pct.toFixed(1)}%` :
                 activeKPIId === 'oee' && activeKpis ? `${activeKpis.oee_pct.toFixed(1)}%` :
                 undefined
               }

@@ -248,8 +248,8 @@ export const getMockAiChat = (batch: string, persona: string = 'Plant Manager') 
 
   // Default: Plant Manager
   return [
-    { sender: 'user', text: 'Summarize the active shift performance across all plants.' },
-    { sender: 'ai', text: 'Currently, the Pune Facility is operating at **94.5% efficiency** with an OEE of **91.2%**, satisfying today\'s output targets. The Paracetamol 500mg line is running normally except for minor dry-bleed exhaust damper issues in Dryer-03. Scheduled batch completion times are currently on track.' },
+    { sender: 'user', text: 'Summarize the active shift performance for the plant.' },
+    { sender: 'ai', text: 'Currently, the Hyderabad Plant is operating at **94.5% efficiency** with an OEE of **91.2%**, satisfying today\'s output targets. The Paracetamol 500mg line is running normally except for minor dry-bleed exhaust damper issues in Dryer-03. Scheduled batch completion times are currently on track.' },
     { sender: 'user', text: 'Are there any major risks for the next shift?' },
     { sender: 'ai', text: 'Based on trend extrapolation:\n1. **Material Shortages**: Low risk. All solvent buffers are at 85% capacity.\n2. **Maintenance**: Boiler-B scheduled checkup due. Clean-in-place (CIP) logs indicate 0 exceptions.\nNo critical blockers detected for the night shift transition.' }
   ];

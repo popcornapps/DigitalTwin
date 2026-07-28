@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export const PLANTS = ['Hyderabad Plant', 'Pune Facility', 'Chennai Plant'];
-export const PRODUCTS = ['Paracetamol 500mg', 'Amoxicillin 250mg', 'Ibuprofen 400mg'];
+// Single-plant, single-product POC scope - see docs/data-architecture.md and
+// docs/data-coverage-audit.md: Amoxicillin/Ibuprofen and Pune/Chennai never
+// had real generated batch data behind them, only hardcoded mock numbers.
+export const PLANTS = ['Hyderabad Plant'];
+export const PRODUCTS = ['Paracetamol 500mg'];
 
 
 interface FilterContextType {

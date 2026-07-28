@@ -61,15 +61,6 @@ function buildGoldenBatchReasons(
     return Math.round((beaten / others.length) * 100);
   };
 
-  // Process Stability - benchmark per kpiDefinitions.ts: >95% target, 98%+ best-in-class.
-  if (kpis.process_stability_pct >= 95) {
-    const pct = kpis.process_stability_pct;
-    reasons.push({
-      title: pct >= 99.95 ? '100% Process Stability' : `${pct.toFixed(1)}% Process Stability`,
-      desc: `Temperature, Process Pressure, and Flow Rate stayed within their control limits ${pct.toFixed(1)}% of the steady-state drying window.`,
-    });
-  }
-
   // Zero Critical Deviations - real ground-truth label + real fault-onset check, not an assertion.
   if (summary.ground_truth_severity === 'Normal' && kpis.fault_onset_elapsed_minutes === null) {
     reasons.push({
@@ -125,8 +116,7 @@ const kpiIdMap: Record<string, string> = {
   'Yield': 'yield',
   'Quality Score': 'qualityScore',
   'Cycle Time': 'cycleTime',
-  'Energy Consumption': 'sec',
-  'Process Stability': 'processStability',
+  'Specific Energy Consumption': 'sec',
   'OEE': 'oee',
 };
 
@@ -250,8 +240,10 @@ export default function GoldenBatch() {
       icon: <ShieldCheck className="h-5 w-5 text-rose-600" />, color: 'bg-rose-50',
     },
     { label: 'Cycle Time', value: durationHrs, icon: <Clock className="h-5 w-5 text-blue-600" />, color: 'bg-blue-50' },
-    { label: 'Energy Consumption', value: `${kpis.total_energy_kwh.toFixed(0)} kWh`, icon: <Flame className="h-5 w-5 text-orange-600" />, color: 'bg-orange-50' },
-    { label: 'Process Stability', value: `${kpis.process_stability_pct.toFixed(1)}%`, icon: <Award className="h-5 w-5 text-teal-600" />, color: 'bg-teal-50' },
+    {
+      label: 'Specific Energy Consumption', value: `${kpis.sec_kwh_per_kg.toFixed(2)} kWh/kg`,
+      icon: <Flame className="h-5 w-5 text-orange-600" />, color: 'bg-orange-50',
+    },
     { label: 'OEE', value: `${kpis.oee_pct.toFixed(1)}%`, icon: <Activity className="h-5 w-5 text-indigo-600" />, color: 'bg-indigo-50' },
   ];
 
