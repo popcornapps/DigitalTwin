@@ -243,6 +243,18 @@ export interface ParameterAssessment {
   trigger_explanation: string | null;
   urgency: AgentUrgency | null;
   operational_impact: string | null;
+  // Deterministic, evidence-based confidence in the diagnosis/action itself
+  // (app.live.confidence) - distinct from `confidence` above, which is the
+  // ML forecast's own confidence-interval-width confidence.
+  root_cause_confidence_pct: number | null;
+  root_cause_confidence_level: 'High' | 'Medium' | 'Low' | null;
+  root_cause_confidence_explanation: string | null;
+  recommendation_confidence_pct: number | null;
+  recommendation_confidence_level: 'High' | 'Medium' | 'Low' | null;
+  recommendation_confidence_explanation: string | null;
+  // Which path actually produced alert_summary/.../operational_impact above
+  // - 'static' (deterministic template) or 'llm' (real Azure OpenAI call).
+  reasoning_source: 'static' | 'llm' | null;
 }
 
 export interface RunningBatchTelemetryResponse {
@@ -281,6 +293,16 @@ export interface DeviationAlert {
   trigger_explanation: string | null;
   urgency: AgentUrgency | null;
   operational_impact: string | null;
+  // Deterministic, evidence-based confidence in the diagnosis/action itself
+  // (app.live.confidence) - distinct from `confidence` above.
+  root_cause_confidence_pct: number | null;
+  root_cause_confidence_level: 'High' | 'Medium' | 'Low' | null;
+  root_cause_confidence_explanation: string | null;
+  recommendation_confidence_pct: number | null;
+  recommendation_confidence_level: 'High' | 'Medium' | 'Low' | null;
+  recommendation_confidence_explanation: string | null;
+  // Which path actually produced the reasoning text above - 'static' or 'llm'.
+  reasoning_source: 'static' | 'llm' | null;
   // The human's decision - separate from `status` above: an operator can
   // acknowledge an alert that's still actively deviating, and the agent can
   // resolve an alert nobody ever reviewed.
@@ -313,3 +335,16 @@ export const createRunningBatch = (
 
 export const stopRunningBatch = (runningBatchId: string): Promise<RunningBatchSummary> =>
   postJson(`/live-batches/${encodeURIComponent(runningBatchId)}/stop`);
+
+// --- AI Analysis Mode (global switch, see backend/app/live/ai_mode.py) ---
+// 'static': deterministic fallback reasoning only, no LLM calls (default,
+// keeps LLM cost fully opt-in). 'agent_llm': real Azure OpenAI reasoning for
+// Warning/Critical deviations. Root Cause/Recommendation Confidence
+// percentages are unaffected either way - those are deterministic by design
+// regardless of this mode.
+export type AIMode = 'static' | 'agent_llm';
+
+export const fetchAiMode = (): Promise<{ mode: AIMode }> => fetchJson('/settings/ai-mode');
+
+export const setAiMode = (mode: AIMode): Promise<{ mode: AIMode }> =>
+  postJson('/settings/ai-mode', { mode });

@@ -7,10 +7,11 @@ import {
 import {
   fetchTimeline, fetchParameterConfig, fetchGoldenEnvelope, GOLDEN_BATCH_ID,
   fetchRunningBatches, fetchRunningBatchTelemetry, stopRunningBatch,
+  fetchAiMode, setAiMode,
 } from '../lib/api';
 import type {
   TimelineResponse, ParameterConfigEntry, GoldenEnvelopePoint,
-  RunningBatchSummary, RunningBatchTelemetryResponse,
+  RunningBatchSummary, RunningBatchTelemetryResponse, AIMode,
 } from '../lib/api';
 
 const WARNING_MARGIN_FRACTION = 0.15;
@@ -125,12 +126,19 @@ export default function ProcessMonitoring() {
   const [goldenEnvelope, setGoldenEnvelope] = useState<GoldenEnvelopePoint[]>([]);
   const [activeParamKey, setActiveParamKey] = useState('temperature');
 
+  // AI Analysis Mode - a global backend switch (see backend/app/live/ai_mode.py),
+  // not per-batch. Defaults to Static until the real value loads, matching
+  // the backend's own default so there's no flash of the wrong state.
+  const [aiMode, setAiModeState] = useState<AIMode>('static');
+  const [aiModeUpdating, setAiModeUpdating] = useState(false);
+
   const selectedRunningBatch = runningBatches.find((b) => b.running_batch_id === selectedRunningBatchId) ?? null;
 
   useEffect(() => {
     fetchParameterConfig().then(setParamConfig).catch(() => setParamConfig([]));
     fetchTimeline(GOLDEN_BATCH_ID).then(setGoldenTimeline).catch(() => setGoldenTimeline(null));
     fetchGoldenEnvelope().then(setGoldenEnvelope).catch(() => setGoldenEnvelope([]));
+    fetchAiMode().then((r) => setAiModeState(r.mode)).catch(() => {});
   }, []);
 
   // Running batches list - fetched on mount; also refreshed by each telemetry
@@ -346,6 +354,15 @@ export default function ProcessMonitoring() {
     });
   };
 
+  const handleToggleAiMode = () => {
+    const next: AIMode = aiMode === 'static' ? 'agent_llm' : 'static';
+    setAiModeUpdating(true);
+    setAiMode(next)
+      .then((r) => setAiModeState(r.mode))
+      .catch(() => {})
+      .finally(() => setAiModeUpdating(false));
+  };
+
   if (runningBatchesLoading) {
     return (
       <div className="max-w-7xl mx-auto flex flex-col items-center justify-center h-96 gap-3 text-gray-500">
@@ -414,14 +431,50 @@ export default function ProcessMonitoring() {
             </p>
           )}
         </div>
-        {selectedRunningBatch?.status === 'Running' && (
-          <button
-            onClick={handleStop}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors self-start"
-          >
-            <Square size={12} /> Stop batch
-          </button>
-        )}
+        <div className="flex items-end gap-2 self-start">
+          {/* Global switch (backend/app/live/ai_mode.py) - Static (default)
+              uses deterministic historical-match reasoning with no LLM
+              calls; Agent LLM Mode calls the real AI agent for Warning/
+              Critical deviations. In production this toggle would be
+              hidden/removed and the mode set once via config instead. */}
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">AI Analysis Mode</span>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold transition-colors ${aiMode === 'static' ? 'text-gray-700' : 'text-gray-400'}`}>Static</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={aiMode === 'agent_llm'}
+                onClick={handleToggleAiMode}
+                disabled={aiModeUpdating}
+                title={aiMode === 'static'
+                  ? 'Static: deterministic historical-match reasoning, no LLM calls. Click to turn on Agent LLM Mode.'
+                  : 'Agent LLM Mode: real AI agent reasoning for Warning/Critical deviations. Click to turn off.'}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-wait ${
+                  aiMode === 'agent_llm' ? 'bg-indigo-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    aiMode === 'agent_llm' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <span className={`text-xs font-semibold transition-colors flex items-center gap-1 ${aiMode === 'agent_llm' ? 'text-indigo-700' : 'text-gray-400'}`}>
+                {aiModeUpdating && <Loader2 size={10} className="animate-spin" />}
+                Agent
+              </span>
+            </div>
+          </div>
+          {selectedRunningBatch?.status === 'Running' && (
+            <button
+              onClick={handleStop}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors"
+            >
+              <Square size={12} /> Stop batch
+            </button>
+          )}
+        </div>
       </div>
 
       <div>
@@ -628,8 +681,29 @@ export default function ProcessMonitoring() {
                 </div>
 
                 {activeAssessment.trigger_type && (
-                  <div className="mb-3 text-[11px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-block">
-                    {TRIGGER_LABEL[activeAssessment.trigger_type]}
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-block">
+                      {TRIGGER_LABEL[activeAssessment.trigger_type]}
+                    </span>
+                    {/* Both modes render this panel identically otherwise -
+                        this is the one honest signal of which path actually
+                        produced the text below (see app.live.ai_mode /
+                        llm_agent.generate_alert_reasoning), not a guess. */}
+                    {activeAssessment.reasoning_source && (
+                      <span
+                        title={activeAssessment.reasoning_source === 'llm'
+                          ? 'This explanation was generated by the real AI agent (Azure OpenAI).'
+                          : 'This explanation is a deterministic template, not AI-generated.'}
+                        className={`text-[11px] font-bold uppercase tracking-wider rounded px-2 py-1 inline-flex items-center gap-1 border ${
+                          activeAssessment.reasoning_source === 'llm'
+                            ? 'text-purple-700 bg-purple-50 border-purple-100'
+                            : 'text-gray-500 bg-gray-100 border-gray-200'
+                        }`}
+                      >
+                        {activeAssessment.reasoning_source === 'llm' ? <Bot size={11} /> : <Info size={11} />}
+                        {activeAssessment.reasoning_source === 'llm' ? 'AI Generated' : 'Static Template'}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -694,6 +768,14 @@ export default function ProcessMonitoring() {
                         3 short bullet lines separated by newlines - without
                         this, HTML would collapse them onto one run-on line. */}
                     <p className="text-sm text-gray-800 font-medium leading-relaxed whitespace-pre-line">{activeAssessment.recommended_action}</p>
+                    {activeAssessment.recommendation_confidence_pct != null && (
+                      <div className="mt-2 flex items-center gap-2 text-xs" title={activeAssessment.recommendation_confidence_explanation ?? undefined}>
+                        <span className="font-bold text-gray-400 uppercase tracking-wider">Recommendation Confidence</span>
+                        <span className={`font-bold ${CONFIDENCE_STYLE[activeAssessment.recommendation_confidence_level ?? 'Low']}`}>
+                          {activeAssessment.recommendation_confidence_level} ({activeAssessment.recommendation_confidence_pct}%)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -704,6 +786,14 @@ export default function ProcessMonitoring() {
                   <div className="mb-4 pt-4 border-t border-blue-100">
                     <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Likely Root Cause</div>
                     <p className="text-sm text-gray-700 leading-relaxed">{activeAssessment.likely_root_cause}</p>
+                    {activeAssessment.root_cause_confidence_pct != null && (
+                      <div className="mt-2 flex items-center gap-2 text-xs" title={activeAssessment.root_cause_confidence_explanation ?? undefined}>
+                        <span className="font-bold text-gray-400 uppercase tracking-wider">Root Cause Confidence</span>
+                        <span className={`font-bold ${CONFIDENCE_STYLE[activeAssessment.root_cause_confidence_level ?? 'Low']}`}>
+                          {activeAssessment.root_cause_confidence_level} ({activeAssessment.root_cause_confidence_pct}%)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
