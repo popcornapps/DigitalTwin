@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
 
 from app.live import ai_mode
-from app.schemas.settings import AIModeIn, AIModeOut
+from app.live import config as live_config
+from app.schemas.settings import AIModeIn, AIModeOut, TickIntervalOut
 
 router = APIRouter(prefix='/api/settings', tags=['settings'])
 
@@ -18,3 +19,8 @@ def set_ai_mode(req: AIModeIn):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AIModeOut(mode=mode)
+
+
+@router.get('/tick-interval', response_model=TickIntervalOut)
+def get_tick_interval():
+    return TickIntervalOut(tick_interval_seconds=live_config.TICK_INTERVAL_SECONDS)
