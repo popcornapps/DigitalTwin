@@ -34,7 +34,7 @@ from app.live.confidence import score_recommendation, score_root_cause
 from app.live.ml_bridge import compute_live_feature_row
 from app.live.models import ParameterAssessment, RunningBatch
 from app.live.service import get_latest_reading
-from app.services.alert_service import classify_actual
+from app.services.alert_service import classify_actual, classify_predicted
 from app.state import app_state
 
 _FAULT_SIGNATURES: dict = json.loads(FAULT_SIGNATURES_PATH.read_text())
@@ -212,7 +212,16 @@ def assess(batch: RunningBatch) -> None:
         pred = next((p for p in (batch.latest_prediction.parameters if batch.latest_prediction else []) if p.key == key), None)
         if pred is not None:
             pred_lower, pred_upper, pred_golden = _dynamic_band(key, batch.elapsed_minutes + 30)
-            predicted_status = pred.alert_level.lower()
+            # Classified against the DYNAMIC Golden(t+30)+/-Margin(t+30) band,
+            # not pred.alert_level (which is the ML's own fixed-parameter-
+            # config-band classification - see ml_bridge.py). Same CI-gated
+            # rule as classify_actual's cousin, just fed the future dynamic
+            # bounds instead of the fixed ones, so current and predicted are
+            # evaluated on the same reference frame. pred.alert_level is left
+            # untouched on the LiveParameterPrediction/API - it still reflects
+            # the fixed-band "hard safety limit" read, just no longer drives
+            # the agent's own severity/trigger decision.
+            predicted_status = classify_predicted(pred.predicted, pred_lower, pred_upper, pred.ci_low, pred.ci_high).lower()
             predicted_observation = _observation(label, predicted_status, pred.predicted, pred_golden, unit)
             confidence = _confidence_from_ci(pred.ci_low, pred.ci_high, pred_lower, pred_upper)
             slope = feature_row.get(f'{key}_slope_30', 0.0) if feature_row else 0.0
@@ -241,6 +250,7 @@ def assess(batch: RunningBatch) -> None:
         llm_context = None
         root_cause_confidence = None
         recommendation_confidence = None
+        root_cause_candidates = None
         if info['trigger_type'] is not None:
             root_cause_candidates = _rank_root_cause_candidates(deviating_directions, key)
             root_cause_confidence = score_root_cause(root_cause_candidates)
@@ -282,6 +292,7 @@ def assess(batch: RunningBatch) -> None:
             recommended_action=None,
             trigger_type=info['trigger_type'],
             llm_context=llm_context,
+            root_cause_candidates=root_cause_candidates,
             root_cause_confidence_pct=root_cause_confidence['confidence_pct'] if root_cause_confidence else None,
             root_cause_confidence_level=root_cause_confidence['confidence_level'] if root_cause_confidence else None,
             root_cause_confidence_explanation=root_cause_confidence['explanation'] if root_cause_confidence else None,
