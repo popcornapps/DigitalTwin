@@ -258,6 +258,18 @@ export default function ProcessMonitoring() {
 
       const livePred = runningTelemetry?.prediction?.parameters.find((p) => p.key === cfg.key);
       const goldenFuture = goldenAt30 ? (goldenAt30[cfg.key as keyof typeof goldenAt30] as number) : undefined;
+      // The "In 30 min" badge uses the Deviation Agent's own predicted_status
+      // (dynamic Golden(t+30)+/-Margin(t+30), see deviation_agent.py) rather
+      // than livePred.alert_level (the ML's raw fixed-parameter-config-band
+      // read) - otherwise this badge and the Agent Assessment panel could
+      // show two different severities for the same prediction. Falls back to
+      // the fixed-band read only if the assessment isn't available yet,
+      // which shouldn't normally happen since both gate on the same 30-
+      // minute history requirement.
+      const liveAssessment = runningTelemetry?.assessments.find((a) => a.key === cfg.key);
+      const dynamicPredictedLevel = liveAssessment?.predicted_status
+        ? ((liveAssessment.predicted_status.charAt(0).toUpperCase() + liveAssessment.predicted_status.slice(1)) as 'Normal' | 'Warning' | 'Critical')
+        : livePred?.alert_level;
       return {
         key: cfg.key,
         label: cfg.label,
@@ -268,7 +280,7 @@ export default function ProcessMonitoring() {
         upperLimit: effectiveUpper,
         status: classifyStatus(current, effectiveLower, effectiveUpper),
         prediction: livePred
-          ? { predicted: livePred.predicted, goldenFuture, alertLevel: livePred.alert_level }
+          ? { predicted: livePred.predicted, goldenFuture, alertLevel: dynamicPredictedLevel ?? livePred.alert_level }
           : undefined,
       };
     });
