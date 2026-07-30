@@ -250,7 +250,6 @@ def assess(batch: RunningBatch) -> None:
         llm_context = None
         root_cause_confidence = None
         recommendation_confidence = None
-        root_cause_candidates = None
         if info['trigger_type'] is not None:
             root_cause_candidates = _rank_root_cause_candidates(deviating_directions, key)
             root_cause_confidence = score_root_cause(root_cause_candidates)
@@ -292,7 +291,6 @@ def assess(batch: RunningBatch) -> None:
             recommended_action=None,
             trigger_type=info['trigger_type'],
             llm_context=llm_context,
-            root_cause_candidates=root_cause_candidates,
             root_cause_confidence_pct=root_cause_confidence['confidence_pct'] if root_cause_confidence else None,
             root_cause_confidence_level=root_cause_confidence['confidence_level'] if root_cause_confidence else None,
             root_cause_confidence_explanation=root_cause_confidence['explanation'] if root_cause_confidence else None,
