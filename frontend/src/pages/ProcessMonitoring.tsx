@@ -533,9 +533,10 @@ export default function ProcessMonitoring() {
                 <span className="text-sm font-medium text-gray-500">{param.label}</span>
                 <span className={`w-3 h-3 rounded-full ${STATUS_DOT[param.status]}`}></span>
               </div>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Actual</span>
               <div className="text-2xl font-bold text-gray-900">{param.current} {param.unit}</div>
               <div className="mt-2 text-sm text-gray-500 flex justify-between">
-                <span>Gold: {param.golden}</span>
+                <span>Golden Batch: {param.golden}</span>
                 <span className={`font-medium ${dev > 0 ? 'text-rose-600' : dev < 0 ? 'text-indigo-600' : 'text-gray-600'}`}>
                   Dev: {dev > 0 ? '+' : ''}{dev.toFixed(2)}
                 </span>
@@ -549,7 +550,7 @@ export default function ProcessMonitoring() {
                       : param.prediction.predicted < param.current
                       ? <ArrowDown size={12} className="text-indigo-500" />
                       : <Minus size={12} className="text-gray-400" />}
-                    In 30 min
+                    Predicted (30 min)
                   </span>
                   <span className="text-sm font-bold text-gray-800">{param.prediction.predicted} {param.unit}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${PREDICTED_ALERT_BADGE[param.prediction.alertLevel]}`}>
@@ -600,7 +601,7 @@ export default function ProcessMonitoring() {
                       <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }} />
                       <ReferenceArea y1={activeParamObj.lowerLimit} y2={activeParamObj.upperLimit} fill="#10b981" fillOpacity={0.08} />
                       <Line type="monotone" dataKey={activeParamKey} name={`Current ${activeParamObj.label}`} stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey={`golden_${activeParamKey}`} name={`Golden ${activeParamObj.label}`} stroke="#eab308" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                      <Line type="monotone" dataKey={`golden_${activeParamKey}`} name={`Golden Batch ${activeParamObj.label}`} stroke="#eab308" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

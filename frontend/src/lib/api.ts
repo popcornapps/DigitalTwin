@@ -330,8 +330,13 @@ export const fetchRunningBatchTelemetry = (runningBatchId: string): Promise<Runn
 export const createRunningBatch = (
   plant: string,
   scenarioProfile: 'Normal' | 'Warning' | 'Critical' = 'Normal',
+  driftingParameter?: string | null,
 ): Promise<RunningBatchSummary> =>
-  postJson('/live-batches', { plant, scenario_profile: scenarioProfile });
+  postJson('/live-batches', {
+    plant,
+    scenario_profile: scenarioProfile,
+    ...(driftingParameter ? { drifting_parameter: driftingParameter } : {}),
+  });
 
 export const stopRunningBatch = (runningBatchId: string): Promise<RunningBatchSummary> =>
   postJson(`/live-batches/${encodeURIComponent(runningBatchId)}/stop`);
@@ -355,3 +360,62 @@ export const setAiMode = (mode: AIMode): Promise<{ mode: AIMode }> =>
 // backend's actual speed profile.
 export const fetchTickIntervalSeconds = (): Promise<{ tick_interval_seconds: number }> =>
   fetchJson('/settings/tick-interval');
+
+// --- KPI Prediction & Deviation Agent ---
+// Standalone from the process-parameter forecast above: a separate model
+// trained on synthetic data (see backend/app/live/kpi_prediction_agent.py
+// and scripts/generate-synthetic-kpi-data/), since Yield/Quality Score/SEC/
+// OEE/Total Energy have no real within-batch temporal signal to learn from.
+// Predicts each batch's FINAL outcome (not a 30-min-ahead snapshot) from
+// whatever process-parameter history is available so far - Yield/Quality/
+// SEC/OEE/Total Energy are inherently single, end-of-batch outcomes, unlike
+// the continuously-forecastable process parameters above.
+
+export type KpiKey = 'yield_pct' | 'quality_score_pct' | 'sec_kwh_per_kg' | 'oee_pct' | 'total_energy_kwh';
+
+export interface KpiContributingParameter {
+  key: string;
+  label: string;
+  unit: string;
+  current: number;
+  golden: number;
+  deviation: number;
+  direction: 'up' | 'down' | 'stable';
+  deviation_score: number;
+}
+
+export interface KpiPrediction {
+  key: KpiKey;
+  label: string;
+  unit: string;
+  predicted_final: number;
+  golden_final: number;
+  deviation_pct: number;
+  status: 'normal' | 'warning' | 'critical';
+  confidence: 'High' | 'Medium' | 'Low';
+  // Plain-language reason the confidence is at this level (e.g. "Batch just
+  // started - too early to trust this yet") - shown alongside the badge so
+  // the operator knows WHY, not just the level.
+  confidence_reason: string;
+  contributing_parameters: KpiContributingParameter[];
+  // LLM reasoning layer output (backend/app/live/kpi_llm_agent.py) - mirrors
+  // app.live.llm_agent's Azure OpenAI + fallback pattern. Static mode (the
+  // default) uses a deterministic fallback template; Agent LLM mode calls
+  // Azure OpenAI, falling back to the same template on any failure.
+  // reasoning_source reports which one actually produced this text.
+  kpi_summary: string;
+  deviation_explanation: string;
+  urgency: AgentUrgency;
+  recommended_action: string;
+  operational_impact: string;
+  reasoning_source: 'static' | 'llm';
+}
+
+export interface KpiPredictionResponse {
+  running_batch_id: string;
+  elapsed_minutes: number;
+  kpis: KpiPrediction[];
+}
+
+export const fetchKpiPrediction = (runningBatchId: string): Promise<KpiPredictionResponse> =>
+  fetchJson(`/kpi-prediction/${encodeURIComponent(runningBatchId)}`);
