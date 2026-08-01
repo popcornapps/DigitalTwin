@@ -150,7 +150,7 @@ export default function Settings() {
               <div key={b.running_batch_id} className="flex items-center justify-between border border-gray-100 rounded-lg px-4 py-3">
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-semibold text-gray-800">{b.running_batch_id}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[b.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-[11.25px] font-bold border ${STATUS_BADGE[b.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                     {b.status}
                   </span>
                   <span className="text-xs text-gray-500">{b.scenario_profile}{b.drifting_parameter ? ` · ${b.drifting_parameter}` : ''}</span>

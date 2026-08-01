@@ -254,7 +254,7 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-2 border-b border-gray-205 border-gray-200 pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-blue-50 text-blue-600 border border-blue-200">
+            <span className="px-2 py-0.5 rounded text-[11.25px] font-extrabold uppercase bg-blue-50 text-blue-600 border border-blue-200">
               {selectedPersona} View
             </span>
           </div>
@@ -327,12 +327,12 @@ export default function Dashboard() {
                 </div>
                 <div className="flex gap-4 text-sm bg-gray-50 border border-gray-100 rounded-lg p-3 shrink-0">
                   <div>
-                    <div className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Today's Avg</div>
+                    <div className="text-gray-500 text-[11.25px] font-bold uppercase tracking-wider">Today's Avg</div>
                     <div className="font-extrabold text-gray-900 text-sm">93.5%</div>
                   </div>
                   <div className="w-px bg-gray-200"></div>
                   <div>
-                    <div className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Historical Peak</div>
+                    <div className="text-gray-500 text-[11.25px] font-bold uppercase tracking-wider">Historical Peak</div>
                     <div className="font-extrabold text-yellow-600 text-sm">96.2%</div>
                   </div>
                 </div>
@@ -478,19 +478,19 @@ export default function Dashboard() {
               </h2>
               <div className="grid grid-cols-2 gap-4 text-xs font-semibold">
                 <div className="bg-gray-50 border border-gray-100 p-2.5 rounded-lg flex flex-col justify-center">
-                  <span className="text-[10px] text-gray-400 uppercase">Average</span>
+                  <span className="text-[11.25px] text-gray-400 uppercase">Average</span>
                   <span className="text-sm font-extrabold text-slate-800 mt-0.5">{stats.avg}</span>
                 </div>
                 <div className="bg-gray-50 border border-gray-100 p-2.5 rounded-lg flex flex-col justify-center">
-                  <span className="text-[10px] text-gray-400 uppercase">Std Dev</span>
+                  <span className="text-[11.25px] text-gray-400 uppercase">Std Dev</span>
                   <span className="text-sm font-extrabold text-slate-800 mt-0.5">{stats.stdDev}</span>
                 </div>
                 <div className="bg-gray-50 border border-gray-100 p-2.5 rounded-lg flex flex-col justify-center">
-                  <span className="text-[10px] text-gray-400 uppercase">Min / Max</span>
-                  <span className="text-[10px] font-extrabold text-slate-800 mt-0.5">{stats.min} / {stats.max}</span>
+                  <span className="text-[11.25px] text-gray-400 uppercase">Min / Max</span>
+                  <span className="text-[11.25px] font-extrabold text-slate-800 mt-0.5">{stats.min} / {stats.max}</span>
                 </div>
                 <div className="bg-gray-50 border border-gray-100 p-2.5 rounded-lg flex flex-col justify-center">
-                  <span className="text-[10px] text-gray-400 uppercase">Variance</span>
+                  <span className="text-[11.25px] text-gray-400 uppercase">Variance</span>
                   <span className="text-sm font-extrabold text-slate-800 mt-0.5">{stats.variance}</span>
                 </div>
               </div>
@@ -519,7 +519,7 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              <p className="text-[11px] text-gray-500 font-semibold leading-relaxed text-center">
+              <p className="text-[12.38px] text-gray-500 font-semibold leading-relaxed text-center">
                 {qualityReport.releaseExplanation}
               </p>
             </div>
@@ -552,8 +552,8 @@ export default function Dashboard() {
                       ? `Warning: ${activeParamName} is drifting (+${(activeParamObj.current - activeParamObj.golden).toFixed(2)} ${activeParamObj.unit}). The parameter is nearing the control thresholds.`
                       : `Critical deviation detected in ${activeParamName} (${(activeParamObj.current - activeParamObj.golden).toFixed(2)} ${activeParamObj.unit}). Process has exceeded bounds.`}
                   </p>
-                  <div className="text-[10px] font-bold text-gray-400 flex items-center gap-1.5 pt-3 border-t border-gray-150">
-                    Target Band: <span className="bg-white px-2 py-0.5 rounded border border-gray-200 font-mono text-[9px]">{activeParamObj.lowerLimit}-{activeParamObj.upperLimit} {activeParamObj.unit}</span>
+                  <div className="text-[11.25px] font-bold text-gray-400 flex items-center gap-1.5 pt-3 border-t border-gray-150">
+                    Target Band: <span className="bg-white px-2 py-0.5 rounded border border-gray-200 font-mono text-[10.13px]">{activeParamObj.lowerLimit}-{activeParamObj.upperLimit} {activeParamObj.unit}</span>
                   </div>
                 </div>
               </div>
@@ -581,7 +581,7 @@ export default function Dashboard() {
             {recentAlerts.map(alert => (
               <div key={alert.id} className="p-4 rounded-lg border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-sm transition-all duration-200">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                  <span className={`inline-flex px-2 py-0.5 rounded text-[11.25px] font-black uppercase ${
                     alert.severity === 'Critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
                   }`}>
                     {alert.severity}
@@ -618,7 +618,7 @@ export default function Dashboard() {
                     }`}></span>
                   </div>
                   <div className="text-lg font-black mt-2">{p.current} {p.unit}</div>
-                  <div className="text-[10px] font-bold text-gray-400 mt-1 flex justify-between">
+                  <div className="text-[11.25px] font-bold text-gray-400 mt-1 flex justify-between">
                     <span>Target: {p.golden}</span>
                     <span className={dev > 0 ? 'text-red-500' : 'text-blue-500'}>
                       Dev: {dev > 0 ? '+' : ''}{dev.toFixed(2)}
@@ -656,12 +656,12 @@ export default function Dashboard() {
                         : 'border-gray-200'
                     }`}
                   >
-                    <div className="flex justify-between items-center text-[10px] font-bold text-gray-405 text-gray-400 mb-1">
+                    <div className="flex justify-between items-center text-[11.25px] font-bold text-gray-405 text-gray-400 mb-1">
                       <span>{anm.id}</span>
                       <span>{anm.time}</span>
                     </div>
                     <span className="text-xs font-black text-gray-700 block mb-1.5">{anm.parameter} Exception</span>
-                    <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                    <span className={`inline-flex px-1.5 py-0.5 rounded text-[10.13px] font-black uppercase ${
                       isCritical ? 'bg-red-105 bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
                     }`}>
                       {isCritical ? 'Critical' : 'Warning'}
@@ -678,19 +678,19 @@ export default function Dashboard() {
                   <div className="flex justify-between items-start border-b border-gray-200 pb-2">
                     <div>
                       <h3 className="text-sm font-black text-gray-800">{activeAnomaly.id} - {activeAnomaly.parameter} Deviation</h3>
-                      <p className="text-[10px] text-gray-400 font-bold mt-1">Stage: {activeAnomaly.stage} | Risk: {activeAnomaly.riskLevel}</p>
+                      <p className="text-[11.25px] text-gray-400 font-bold mt-1">Stage: {activeAnomaly.stage} | Risk: {activeAnomaly.riskLevel}</p>
                     </div>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Root Cause Analysis</span>
+                    <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Root Cause Analysis</span>
                     <p className="text-xs text-gray-700 leading-relaxed font-semibold bg-white p-3 border border-gray-200 rounded-lg">{activeAnomaly.rootCause}</p>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Assessed Product Quality Impact</span>
+                    <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Assessed Product Quality Impact</span>
                     <p className="text-xs text-gray-600 leading-relaxed font-semibold">{activeAnomaly.qualityImpact}</p>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Corrective recommendation directives</span>
+                    <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Corrective recommendation directives</span>
                     <ul className="list-disc pl-4 space-y-1 mt-1 text-xs text-indigo-700 font-bold">
                       {activeAnomaly.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}
                     </ul>
@@ -750,7 +750,7 @@ function KPICard({
       <div>
         <div className="flex items-end gap-2 mb-1">
           <p className="text-lg font-black text-gray-900 leading-none">{value}</p>
-          <div className="flex items-center text-[10px] font-bold mb-0.5">
+          <div className="flex items-center text-[11.25px] font-bold mb-0.5">
             <span className={
               trendValue.includes('+') || trendValue === 'Warning' || trendValue === 'Critical'
                 ? 'text-rose-600'
@@ -760,9 +760,9 @@ function KPICard({
             }>{trendValue}</span>
           </div>
         </div>
-        <p className="text-[10px] font-semibold text-gray-400 leading-tight mt-1">{desc}</p>
+        <p className="text-[11.25px] font-semibold text-gray-400 leading-tight mt-1">{desc}</p>
         {hasInfo && (
-          <p className="text-[9px] font-bold text-indigo-400 mt-1.5 uppercase tracking-wider">Click for details</p>
+          <p className="text-[10.13px] font-bold text-indigo-400 mt-1.5 uppercase tracking-wider">Click for details</p>
         )}
       </div>
     </div>

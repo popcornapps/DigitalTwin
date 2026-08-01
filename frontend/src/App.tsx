@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, AlertTriangle, Inbox, TrendingUp, Sparkles, Gauge } from 'lucide-react';
+import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, Inbox, TrendingUp, Sparkles, Gauge } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import BatchExplorer from './pages/BatchExplorer';
 import ProcessMonitoring from './pages/ProcessMonitoring';
 import GoldenBatch from './pages/GoldenBatch';
-import AnomalyIntelligence from './pages/AnomalyIntelligence';
-import QualityWorkbench from './pages/QualityWorkbench';
 import AiCopilot from './pages/AiCopilot';
 import ReviewDesk from './pages/ReviewDesk';
 import DeviationPrediction from './pages/DeviationPrediction';
@@ -24,8 +22,8 @@ export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages
     visiblePages: ['/process-monitoring', '/batch-explorer', '/kpi-deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
   },
   'Quality Engineer': {
-    landingPage: '/anomaly-intelligence',
-    visiblePages: ['/anomaly-intelligence', '/quality-workbench', '/batch-explorer', '/kpi-deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
+    landingPage: '/batch-explorer',
+    visiblePages: ['/batch-explorer', '/kpi-deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
   }
 };
 
@@ -39,8 +37,6 @@ function Sidebar() {
     { name: 'Batch Explorer', path: '/batch-explorer', icon: <Database size={20} /> },
     { name: 'Process Monitoring', path: '/process-monitoring', icon: <TrendingUp size={20} /> },
     { name: 'Golden Batch', path: '/golden-batch', icon: <FileText size={20} /> },
-    { name: 'Anomaly Intelligence', path: '/anomaly-intelligence', icon: <AlertTriangle size={20} /> },
-    { name: 'Quality Workbench', path: '/quality-workbench', icon: <Activity size={20} /> },
     { name: 'Deviation Prediction', path: '/deviation-prediction', icon: <Sparkles size={20} /> },
     { name: 'KPI Prediction & Deviation', path: '/kpi-deviation-prediction', icon: <Gauge size={20} /> },
     { name: 'AI Review Desk', path: '/review-desk', icon: <Inbox size={20} /> },
@@ -138,7 +134,7 @@ function Header() {
             </div>
             <div className="text-left hidden md:block select-none">
               <div className="text-xs font-bold text-gray-800 leading-tight">J. Doe</div>
-              <div className="text-[10px] font-semibold text-blue-600 mt-0.5 flex items-center gap-1">
+              <div className="text-[11.25px] font-semibold text-blue-600 mt-0.5 flex items-center gap-1">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 {selectedPersona}
               </div>
@@ -158,13 +154,13 @@ function Header() {
               <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
               <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2 animate-fade-in-dropdown select-none">
                 <div className="px-4 py-2 border-b border-gray-100 mb-1.5">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Active Profile</span>
+                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block">Active Profile</span>
                   <span className="text-sm font-extrabold text-gray-800 block mt-0.5">J. Doe</span>
-                  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold mt-1.5">
+                  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-[11.25px] px-2 py-0.5 rounded-full font-bold mt-1.5">
                     {selectedPersona}
                   </span>
                 </div>
-                <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <div className="px-4 py-1 text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">
                   Switch Persona
                 </div>
                 <ul className="space-y-0.5 mt-1">
@@ -236,8 +232,6 @@ function AppContent() {
               <Route path="/batch-explorer" element={<BatchExplorer />} />
               <Route path="/process-monitoring" element={<ProcessMonitoring />} />
               <Route path="/golden-batch" element={<GoldenBatch />} />
-              <Route path="/anomaly-intelligence" element={<AnomalyIntelligence />} />
-              <Route path="/quality-workbench" element={<QualityWorkbench />} />
               <Route path="/deviation-prediction" element={<DeviationPrediction />} />
               <Route path="/kpi-deviation-prediction" element={<KpiDeviationPrediction />} />
               <Route path="/settings" element={<SettingsPage />} />

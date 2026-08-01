@@ -183,7 +183,7 @@ export default function DeviationPrediction() {
           onChange={(e) => setElapsedMinutes(Number(e.target.value))}
           className="w-full accent-indigo-600 cursor-pointer"
         />
-        <p className="text-[10px] text-gray-400 mt-1">
+        <p className="text-[11.25px] text-gray-400 mt-1">
           Valid prediction window for this batch: {selectedBatch.valid_time_range.min_elapsed_minutes}–{selectedBatch.valid_time_range.max_elapsed_minutes} min
           (outside this range there isn't 30 minutes of history yet, no future value to check yet, or the golden band doesn't apply to that phase)
         </p>
@@ -242,7 +242,7 @@ export default function DeviationPrediction() {
                 <div key={p.key} className={`bg-white rounded-xl shadow-sm border p-5 flex flex-col justify-between ${style.card}`}>
                   <div className="flex justify-between items-start mb-3">
                     <span className="text-sm font-semibold text-gray-700">{p.label}</span>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${style.badge}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11.25px] font-bold border ${style.badge}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`}></span>
                       {p.alert_level}
                     </span>
@@ -250,36 +250,36 @@ export default function DeviationPrediction() {
 
                   <div className="space-y-2.5">
                     <div className="flex justify-between items-baseline">
-                      <span className="text-[10px] text-gray-400 uppercase font-semibold">Current</span>
+                      <span className="text-[11.25px] text-gray-400 uppercase font-semibold">Current</span>
                       <span className="text-lg font-bold text-gray-900">{p.current} {p.unit}</span>
                     </div>
 
                     {p.applicable ? (
                       <>
                         <div className="flex justify-between items-baseline">
-                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Predicted (+30m)</span>
+                          <span className="text-[11.25px] text-gray-400 uppercase font-semibold">Predicted (+30m)</span>
                           <span className="text-base font-bold text-indigo-600">{p.predicted} {p.unit}</span>
                         </div>
                         <div className="flex justify-between items-baseline">
-                          <span className="text-[10px] text-gray-400 uppercase font-semibold">90% Confidence</span>
+                          <span className="text-[11.25px] text-gray-400 uppercase font-semibold">90% Confidence</span>
                           <span className="text-xs font-mono text-gray-600">{p.ci_low} – {p.ci_high}</span>
                         </div>
                         <div className="flex justify-between items-baseline">
-                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Actual (+30m)</span>
+                          <span className="text-[11.25px] text-gray-400 uppercase font-semibold">Actual (+30m)</span>
                           <span className="text-sm font-bold text-gray-700">{p.actual} {p.unit}</span>
                         </div>
                         <div className="flex justify-between items-baseline">
-                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Error</span>
+                          <span className="text-[11.25px] text-gray-400 uppercase font-semibold">Error</span>
                           <span className={`text-xs font-mono ${Math.abs(p.error ?? 0) > 1 ? 'text-red-500' : 'text-gray-500'}`}>
                             {(p.error ?? 0) > 0 ? '+' : ''}{p.error} {p.unit}
                           </span>
                         </div>
                         {p.correctness && (
                           <div className="pt-1 space-y-1">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${CORRECTNESS_DISPLAY[p.correctness].badge}`}>
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.25px] font-bold border ${CORRECTNESS_DISPLAY[p.correctness].badge}`}>
                               {CORRECTNESS_DISPLAY[p.correctness].label}
                             </span>
-                            <div className="text-[10px] text-gray-400">
+                            <div className="text-[11.25px] text-gray-400">
                               Predicted: <span className="font-semibold text-gray-500">{p.alert_level}</span>
                               {' · '}
                               Actual: <span className="font-semibold text-gray-500">{p.actual_alert_level ?? '—'}</span>
@@ -288,14 +288,14 @@ export default function DeviationPrediction() {
                         )}
                       </>
                     ) : (
-                      <p className="text-[11px] text-gray-400 italic pt-1">
+                      <p className="text-[12.38px] text-gray-400 italic pt-1">
                         Idle during drying — not covered by deviation prediction in this phase.
                       </p>
                     )}
 
                     <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
-                      <span className="text-[10px] text-gray-400 uppercase font-semibold">Golden Limit</span>
-                      <span className="text-[11px] font-mono text-gray-500">{p.lower_limit} – {p.upper_limit} {p.unit}</span>
+                      <span className="text-[11.25px] text-gray-400 uppercase font-semibold">Golden Limit</span>
+                      <span className="text-[12.38px] font-mono text-gray-500">{p.lower_limit} – {p.upper_limit} {p.unit}</span>
                     </div>
                   </div>
                 </div>

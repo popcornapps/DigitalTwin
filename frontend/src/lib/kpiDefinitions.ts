@@ -15,7 +15,6 @@ export interface KPIDefinition {
     result: string;
   };
   benchmarkRange: string;
-  influencingParameters: string[];
   category: 'efficiency' | 'quality' | 'performance' | 'energy' | 'similarity';
 }
 
@@ -36,12 +35,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '83.9%',
     },
     benchmarkRange: 'World-class: 85%+, Good: 70-85%, Fair: 60-70%, Poor: <60%',
-    influencingParameters: [
-      'Equipment runtime vs. planned production time',
-      'Actual throughput vs. ideal cycle time',
-      'Good units produced vs. total units started',
-      'Downtime events (breakdowns, changeovers, waiting)',
-    ],
     category: 'efficiency',
   },
 
@@ -60,12 +53,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '99.1%',
     },
     benchmarkRange: 'Pharmaceutical industry: 96-99.5% (high-value products target 99%+)',
-    influencingParameters: [
-      'Process stability during drying (Temperature/Pressure/Flow)',
-      'Mixing and granulation control',
-      'Equipment calibration (feeders, scales)',
-      'Rejected or off-spec material',
-    ],
     category: 'efficiency',
   },
 
@@ -84,11 +71,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '96.0%',
     },
     benchmarkRange: 'Pharmaceutical release standard: >95% (typical 97-99.5%)',
-    influencingParameters: [
-      'Assay result vs. label-claim target',
-      'Process stability during drying',
-      'Temperature/Pressure/Flow excursions',
-    ],
     category: 'quality',
   },
 
@@ -107,11 +89,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '99.6%',
     },
     benchmarkRange: 'Pharmaceutical specification: 95-105% of label claim (target 100%)',
-    influencingParameters: [
-      'Drying temperature and duration',
-      'Process pressure stability',
-      'Flow rate consistency',
-    ],
     category: 'quality',
   },
 
@@ -131,12 +108,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '96.7%',
     },
     benchmarkRange: 'Pharmaceutical process validation target: >95% (best-in-class: 98%+)',
-    influencingParameters: [
-      'Temperature control loop performance',
-      'Pressure regulation accuracy',
-      'Flow rate valve control',
-      'Sensor drift or calibration errors',
-    ],
     category: 'performance',
   },
 
@@ -154,11 +125,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '6.67 hrs',
     },
     benchmarkRange: 'Varies by product: Tablets 8-16 hrs, Capsules 10-20 hrs, Sterile products 24-72 hrs',
-    influencingParameters: [
-      'Drying temperature and duration',
-      'Equipment downtime or breakdowns',
-      'Process deviations requiring investigation',
-    ],
     category: 'performance',
   },
 
@@ -177,11 +143,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '1.6 kWh/kg',
     },
     benchmarkRange: 'Pharmaceutical manufacturing: 0.8-2.5 kWh/kg (depends on product complexity)',
-    influencingParameters: [
-      'Drying temperature and duration (major energy consumer)',
-      'Batch duration',
-      'Process instability (drives corrective energy use)',
-    ],
     category: 'energy',
   },
 
@@ -201,11 +162,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '93.3%',
     },
     benchmarkRange: 'Best-in-class plants: 90%+, Average: 75-85%, Needs improvement: <70%',
-    influencingParameters: [
-      'Individual batch OEE performance',
-      'Batch quality outcomes across the plant',
-      'Process stability consistency across batches',
-    ],
     category: 'performance',
   },
 
@@ -225,11 +181,6 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
       result: '95.3%',
     },
     benchmarkRange: 'Target: >95% similarity for validated processes, >90% acceptable, <85% investigate',
-    influencingParameters: [
-      'Process parameter trajectories vs. Golden Batch',
-      'Raw material and equipment consistency',
-      'Operator adherence to setpoints',
-    ],
     category: 'similarity',
   },
 };

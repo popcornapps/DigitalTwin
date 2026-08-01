@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Search, Activity, ShieldCheck, Clock, Flame, XCircle, Loader2, AlertTriangle, Radio, ExternalLink, Package, FlaskConical } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -44,7 +45,7 @@ function KpiCard({ label, value, icon, color, onClick, hint }: { label: string; 
         <div className={`p-2 rounded-lg ${color}`}>{icon}</div>
         <span className="text-lg font-bold text-gray-900">{value}</span>
       </div>
-      {hint && <span className="text-[10px] font-semibold text-indigo-400 mt-2">{hint}</span>}
+      {hint && <span className="text-[11.25px] font-semibold text-indigo-400 mt-2">{hint}</span>}
     </Tag>
   );
 }
@@ -336,9 +337,9 @@ export default function BatchExplorer() {
         </table>
       </div>
 
-      {activeBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-2xl flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5">
+      {activeBatch && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-white/70 backdrop-blur-[2px]" onClick={closeBatchModal}>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-2xl flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
               <div>
                 <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest flex items-center gap-2">
@@ -433,7 +434,8 @@ export default function BatchExplorer() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Live running-batch summary modal - deliberately lighter than the
@@ -442,9 +444,9 @@ export default function BatchExplorer() {
           known (status, scenario, progress) and links out to Process
           Monitoring for the full live detail (predictions, Agent Assessment)
           rather than trying to recreate that view here. */}
-      {activeRunningBatch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-md flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5">
+      {activeRunningBatch && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-white/70 backdrop-blur-[2px]" onClick={() => setActiveRunningBatchId(null)}>
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-md flex flex-col max-h-full overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
               <div>
                 <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest flex items-center gap-2">
@@ -490,7 +492,8 @@ export default function BatchExplorer() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* KPI Education Modal (stacks on top of batch modal at z-[70]) */}

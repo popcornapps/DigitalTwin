@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { XCircle } from 'lucide-react';
 import type { KPIDefinition } from '../lib/kpiDefinitions';
 
@@ -26,9 +27,9 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
   const calc = currentCalculation ?? kpiDefinition.exampleCalculation;
   const calcLabel = currentCalculation ? 'Current Batch Calculation' : 'Example Calculation';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 pointer-events-none bg-white/70 backdrop-blur-[2px]">
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-xl flex flex-col max-h-[85vh] overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-white/70 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.15)] relative w-full max-w-xl flex flex-col max-h-[85vh] overflow-hidden pointer-events-auto animate-fade-in-content ring-1 ring-black/5" onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-start bg-gray-50 shrink-0">
@@ -88,19 +89,6 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
             <p className="text-sm font-semibold text-gray-900">{kpiDefinition.benchmarkRange}</p>
           </div>
 
-          {/* 5. Key Influencing Factors */}
-          <div>
-            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Key Influencing Factors</h3>
-            <ul className="space-y-1">
-              {kpiDefinition.influencingParameters.map((factor, idx) => (
-                <li key={idx} className="text-sm text-gray-700 flex items-start gap-2">
-                  <span className="text-gray-400 mt-0.5">•</span>
-                  <span>{factor}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
         </div>
 
         {/* Footer */}
@@ -114,6 +102,7 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -3,6 +3,13 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    /* Global type scale: 16px -> 18px base. Every Tailwind text-* / spacing
+       utility here is rem-based, so this scales all current and future
+       pages uniformly without touching page-level classes. */
+    font-size: 112.5%;
+  }
+
   body {
     @apply bg-gray-50 text-gray-900;
   }

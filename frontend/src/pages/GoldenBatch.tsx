@@ -369,7 +369,7 @@ export default function GoldenBatch() {
                 </tbody>
               </table>
             </div>
-            <p className="text-[10px] text-gray-400 mt-3">
+            <p className="text-[11.25px] text-gray-400 mt-3">
               Process Criticality is predefined engineering metadata, not calculated from this batch's data.
             </p>
           </div>
@@ -403,9 +403,9 @@ export default function GoldenBatch() {
                       <span className="text-lg font-bold text-gray-900">{kpi.value}</span>
                     </div>
                     {'detail' in kpi && (
-                      <span className="text-[10px] font-medium text-gray-400 mt-1">{kpi.detail}</span>
+                      <span className="text-[11.25px] font-medium text-gray-400 mt-1">{kpi.detail}</span>
                     )}
-                    <span className="text-[10px] font-semibold text-indigo-400 mt-2">Click for details</span>
+                    <span className="text-[11.25px] font-semibold text-indigo-400 mt-2">Click for details</span>
                   </button>
                 );
               })}
@@ -437,7 +437,7 @@ export default function GoldenBatch() {
                 This batch's real KPIs don't yet clear the bar on any tracked strength.
               </p>
             )}
-            <p className="text-[10px] text-gray-400 mt-4">
+            <p className="text-[11.25px] text-gray-400 mt-4">
               This batch is the manufacturing reference because it's excellent and well-controlled overall - not
               necessarily the single best performer on every individual KPI.
             </p>
