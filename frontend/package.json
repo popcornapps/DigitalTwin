@@ -7,10 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "generate:paracetamol-dataset": "node scripts/generate-dataset/index.ts",
-    "build:training-dataset": "node scripts/build-training-dataset/index.ts",
-    "train:random-forest": ".venv/bin/python scripts/train-model/train_random_forest.py"
+    "preview": "vite preview"
   },
   "dependencies": {
     "clsx": "^2.1.1",
