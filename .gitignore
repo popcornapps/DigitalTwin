@@ -1,0 +1,8 @@
+.vscode/
+.env
+.venv/
+__pycache__/
+*.pyc
+data/live_alerts_store.json
+models/*.joblib
+.DS_Store
