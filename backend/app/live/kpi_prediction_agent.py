@@ -27,30 +27,35 @@ string). The underlying model is trained on synthetic data generated for
 exactly that plant/product (see scripts/generate-synthetic-kpi-data/
 generate_synthetic_kpi_data.py's PLANT/PRODUCT constants).
 
-Deliberately standalone: computed on demand (called from
-app.routers.kpi_prediction, not wired into live/scheduler.py's per-tick
-loop), and loads its own model/reference data independently of app.state -
-does not touch, modify, or share in-memory state with deviation_agent.py,
-ml_bridge.py, or the real parameter-prediction model. Everything read from
-the existing live pipeline - compute_live_feature_row (the model's input
-features), get_recent_readings (raw readings, for residual-based root-cause
-scoring - see _residual_stats), get_telemetry_history (this batch's full
-history, for _infer_phase_boundaries) - are pure, read-only functions/
-queries, never mutated - plus live_config.PARAMETER_CONFIG's upper/lower
-limits (static reference constants, not training data) for the
-deviation-score normalization scale below.
+Computed on demand (called from app.routers.kpi_prediction, not wired into
+live/scheduler.py's per-tick loop). Reads compute_live_feature_row (the
+model's input features) and get_recent_readings (raw readings, for
+residual-based root-cause scoring - see _residual_stats) from the existing
+live pipeline - pure, read-only, never mutated - plus
+live_config.get_parameter_config()'s upper/lower limits (Postgres-backed
+reference data) for the deviation-score normalization scale, and
+golden_reference.py for both the final-KPI comparison target and the
+root-cause baseline (see below) - the same shared module
+deviation_agent.py uses, so all three comparisons on this page read from
+the same real PAR-GOLDEN data.
 
-Root-cause ranking measures each parameter's deviation against its own
-phase-correct expected baseline (ported from backend/app/live/simulator.py's
-baseline curves - see _baseline_value below), not a single flat "golden"
-number - process parameters legitimately sit far from any one constant
-depending on phase (e.g. Flow Rate is 0 before the transfer phase, Agitator
-RPM is 0 during drying). Comparing against a flat constant would flag every
-early-phase batch as a severe deviation regardless of whether anything is
-actually wrong - the same "100% of batches falsely flagged" bug class
-app.config's DRYING_WINDOW_* constants were introduced to prevent for the
-real pipeline. This root-cause logic is unrelated to the KPI's prediction
-horizon and was unchanged by the 30-min-ahead -> end-of-batch reframing.
+Root-cause ranking measures each parameter's deviation against PAR-GOLDEN's
+own ACTUAL recorded value at that same elapsed minute (golden_reference.
+golden_value_at), not a single flat constant - process parameters
+legitimately sit far from any one constant depending on phase (e.g. Flow
+Rate is 0 before the transfer phase, Agitator RPM is 0 during drying), and
+PAR-GOLDEN's own real trajectory already captures that phase-dependence
+empirically. Comparing against a flat constant would flag every early-phase
+batch as a severe deviation regardless of whether anything is actually
+wrong - the same "100% of batches falsely flagged" bug class app.config's
+DRYING_WINDOW_* constants were introduced to prevent for the real pipeline.
+(This used to be computed from hardcoded phase-correct baseline formulas
+ported from simulator.py, requiring this batch's own inferred phase
+boundaries - replaced with a direct PAR-GOLDEN lookup for consistency with
+the rest of this page, and because it's simpler: no boundary-inference
+needed when comparing directly against a real recorded batch.) This
+root-cause logic is unrelated to the KPI's prediction horizon and was
+unchanged by the 30-min-ahead -> end-of-batch reframing.
 
 The model itself is trained on fully synthetic data - see that script's
 module docstring for why: none of these 5 KPIs have genuine within-batch
@@ -58,11 +63,15 @@ temporal signal in the real historical data, so the synthetic generator
 defines that relationship explicitly instead of trying to learn one that
 doesn't exist - and does so through the same physical dependency chain the
 real historical generator uses (Process Parameters -> Stability ->
-Yield/Energy/Assay -> OEE), not independent per-KPI formulas.
+Yield/Energy/Assay -> OEE), not independent per-KPI formulas. Only the
+model itself is synthetic-trained; the comparison target (golden_reference.
+golden_final_kpis) is PAR-GOLDEN's real recorded outcome, not a synthetic
+one - the two were already close in practice (e.g. real Yield 99.77% vs the
+old computed-ideal 100.0%), confirming the synthetic generator was well
+calibrated to the real golden batch in the first place.
 """
 import concurrent.futures
 import json
-import math
 from pathlib import Path
 
 import joblib
@@ -70,14 +79,14 @@ import numpy as np
 
 from app.config import PARAMETER_LABELS, PARAMETER_UNITS
 from app.live import ai_mode, config as live_config
+from app.live import golden_reference
 from app.live import kpi_llm_agent
 from app.live.ml_bridge import compute_live_feature_row
-from app.live.service import get_recent_readings, get_telemetry_history
+from app.live.service import get_recent_readings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MODEL_PATH = REPO_ROOT / 'models' / 'synthetic_kpi_random_forest.joblib'
 MANIFEST_PATH = REPO_ROOT / 'models' / 'synthetic_kpi_random_forest_manifest.json'
-GOLDEN_FINAL_PATH = REPO_ROOT / 'data' / 'synthetic_kpi_golden_final.json'
 
 KPI_LABELS = {
     'yield_pct': 'Yield',
@@ -99,6 +108,11 @@ LOWER_IS_BETTER = {
 WARNING_THRESHOLD_PCT = 5.0
 CRITICAL_THRESHOLD_PCT = 15.0
 
+# Rows shown in the small multi-parameter history table - shorter than
+# Process Monitoring's own History table (10 min) since this page already
+# has a lot of vertical content above/below it.
+HISTORY_MINUTES = 5
+
 # Caches the last reasoning generated per (running_batch_id, kpi_key), keyed
 # by a cheap fingerprint (status + leading root-cause parameter) -
 # regenerated only when that fingerprint actually changes, not on every poll
@@ -112,160 +126,32 @@ CRITICAL_THRESHOLD_PCT = 15.0
 # principle the real Deviation Agent's alert_registry already applies.
 _reasoning_cache: dict[tuple[str, str], tuple[tuple, dict]] = {}
 
-# --- Phase-correct baseline curves - ported from backend/app/live/
-# simulator.py's BatchSimulator (see module docstring for why). Each
-# function takes a boundary dict `b` (dispensing_end/dry_mixing_end/etc.),
-# NOT fixed nominal constants - every running batch jitters its own
-# boundaries internally (+/-10% per phase, see simulator.py), and that jitter
-# compounds noticeably by the time a batch reaches its later phases. Using
-# fixed nominal timing was found to produce large, systematic false
-# deviation-score spikes right at every phase transition (a batch whose real
-# transfer_end came 10 minutes earlier than nominal looks, at that nominal
-# transfer_end, like Flow Rate "should" still be 0 when it's actually already
-# at plateau). See _infer_phase_boundaries below, which derives each batch's
-# REAL boundaries from its own recorded telemetry instead of guessing. ---
+# Nominal batch length, in minutes - still used below by _evidence_ceiling
+# to judge "how much of a batch has actually happened yet" for confidence.
+# (The phase-correct baseline formulas that used to live in this section -
+# _infer_phase_boundaries, _baseline_value, and friends - were removed: root
+# cause now compares against PAR-GOLDEN's own real recorded value at each
+# elapsed minute via golden_reference.golden_value_at, which is both simpler
+# - no per-batch phase-boundary inference needed - and consistent with the
+# rest of this page. See module docstring.)
 NOMINAL_PHASE_DURATIONS = {'dispensing': 25, 'dry_mixing': 20, 'wet_massing': 25, 'transfer': 15, 'drying': 270, 'cooling': 30}
-NOMINAL_TOTAL_DURATION = sum(NOMINAL_PHASE_DURATIONS.values())  # 385 - used below as the "how much of a batch has actually happened yet" reference for confidence
-_NOMINAL_BOUNDARIES = {
-    'dispensing_end': NOMINAL_PHASE_DURATIONS['dispensing'],
-    'dry_mixing_end': NOMINAL_PHASE_DURATIONS['dispensing'] + NOMINAL_PHASE_DURATIONS['dry_mixing'],
-    'wet_massing_end': NOMINAL_PHASE_DURATIONS['dispensing'] + NOMINAL_PHASE_DURATIONS['dry_mixing'] + NOMINAL_PHASE_DURATIONS['wet_massing'],
-    'transfer_end': sum(NOMINAL_PHASE_DURATIONS[p] for p in ('dispensing', 'dry_mixing', 'wet_massing', 'transfer')),
-    'drying_end': sum(NOMINAL_PHASE_DURATIONS[p] for p in ('dispensing', 'dry_mixing', 'wet_massing', 'transfer', 'drying')),
-    'cooling_end': sum(NOMINAL_PHASE_DURATIONS.values()),
-}
-# Real phase names in chronological order, matching backend/app/live/
-# simulator.py's phase_at() and models.py's RunningBatch.phase values.
-_PHASE_ORDER = ('dispensing', 'dry_mixing', 'wet_massing', 'transfer', 'drying', 'cooling', 'complete')
-_PHASE_TO_BOUNDARY_KEY = {
-    'dry_mixing': 'dispensing_end', 'wet_massing': 'dry_mixing_end', 'transfer': 'wet_massing_end',
-    'drying': 'transfer_end', 'cooling': 'drying_end', 'complete': 'cooling_end',
-}
-
-
-def _infer_phase_boundaries(history: list) -> dict:
-    """Derives THIS batch's actual phase-transition minutes from its own
-    recorded telemetry (each reading carries its own true phase label) -
-    instead of assuming nominal (unjittered) timing, which is what was
-    causing large spurious deviation scores right at transitions. Falls back
-    to the nominal default for any phase not yet reached (there's nothing in
-    the real history yet to infer it from, but that's fine - a boundary that
-    hasn't happened yet can't be inside the trailing window we're evaluating
-    anyway)."""
-    boundaries = dict(_NOMINAL_BOUNDARIES)
-    first_seen = {}
-    for reading in history:
-        if reading.phase not in first_seen:
-            first_seen[reading.phase] = reading.elapsed_minutes
-    for phase, boundary_key in _PHASE_TO_BOUNDARY_KEY.items():
-        if phase in first_seen:
-            boundaries[boundary_key] = first_seen[phase]
-    return boundaries
-
-
-def _lerp(t, t0, t1, v0, v1):
-    if t <= t0:
-        return v0
-    if t >= t1:
-        return v1
-    return v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
-
-
-def _agitator_rpm_baseline(b, t):
-    ramp_to_dry_mix_end = b['dispensing_end'] + 5
-    ramp_to_wet_mass_end = b['dry_mixing_end'] + 4
-    ramp_down_end = b['wet_massing_end'] + 5
-    if t < b['dispensing_end']:
-        return 0.0
-    if t < ramp_to_dry_mix_end:
-        return _lerp(t, b['dispensing_end'], ramp_to_dry_mix_end, 0, 18)
-    if t < b['dry_mixing_end']:
-        return 18.0
-    if t < ramp_to_wet_mass_end:
-        return _lerp(t, b['dry_mixing_end'], ramp_to_wet_mass_end, 18, 22)
-    if t < b['wet_massing_end']:
-        return 22.0
-    if t < ramp_down_end:
-        return _lerp(t, b['wet_massing_end'], ramp_down_end, 22, 0)
-    return 0.0
-
-
-def _flow_rate_baseline(b, t):
-    ramp_up_end = b['transfer_end'] + 7
-    ramp_down_end = b['drying_end'] + 8
-    if t < b['transfer_end']:
-        return 0.0
-    if t < ramp_up_end:
-        return _lerp(t, b['transfer_end'], ramp_up_end, 0, 48.5)
-    if t < b['drying_end']:
-        return 48.5
-    if t < ramp_down_end:
-        return _lerp(t, b['drying_end'], ramp_down_end, 48.5, 0)
-    return 0.0
-
-
-def _process_pressure_baseline(b, t):
-    ramp_up_end = b['transfer_end'] + 10
-    ramp_down_end = b['drying_end'] + 15
-    if t < b['transfer_end']:
-        return 1.01
-    if t < ramp_up_end:
-        return _lerp(t, b['transfer_end'], ramp_up_end, 1.0, 1.2)
-    if t < b['drying_end']:
-        return 1.2
-    if t < ramp_down_end:
-        return _lerp(t, b['drying_end'], ramp_down_end, 1.2, 1.0)
-    return 1.0
-
-
-def _temperature_baseline(b, t, current_rpm):
-    drying_ramp_end = b['transfer_end'] + 40
-    drying_plateau_end = drying_ramp_end + 120
-    if t < b['dispensing_end']:
-        base = 23.0
-    elif t < b['dry_mixing_end']:
-        base = _lerp(t, b['dispensing_end'], b['dry_mixing_end'], 23.0, 30.0)
-    elif t < b['wet_massing_end']:
-        base = _lerp(t, b['dry_mixing_end'], b['wet_massing_end'], 30.0, 34.0)
-    elif t < b['transfer_end']:
-        base = 34.0
-    elif t < drying_ramp_end:
-        base = _lerp(t, b['transfer_end'], drying_ramp_end, 34.0, 65.0)
-    elif t < drying_plateau_end:
-        dip = 1.2 * math.sin((math.pi * (t - drying_ramp_end)) / (drying_plateau_end - drying_ramp_end))
-        base = 65.0 - dip
-    elif t < b['drying_end']:
-        base = _lerp(t, drying_plateau_end, b['drying_end'], 65.0, 66.8)
-    elif t < b['cooling_end']:
-        base = _lerp(t, b['drying_end'], b['cooling_end'], 66.8, 42.0)
-    else:
-        base = 42.0
-    shear_bump = 0.06 * max(0.0, current_rpm - 18) if b['dry_mixing_end'] <= t < b['wet_massing_end'] else 0.0
-    return base + shear_bump
-
-
-def _baseline_value(b: dict, key: str, elapsed_minutes: int, agitator_rpm_now: float) -> float:
-    if key == 'agitator_rpm':
-        return _agitator_rpm_baseline(b, elapsed_minutes)
-    if key == 'flow_rate':
-        return _flow_rate_baseline(b, elapsed_minutes)
-    if key == 'process_pressure':
-        return _process_pressure_baseline(b, elapsed_minutes)
-    return _temperature_baseline(b, elapsed_minutes, agitator_rpm_now)
+NOMINAL_TOTAL_DURATION = sum(NOMINAL_PHASE_DURATIONS.values())  # 385
 
 
 _model_cache = None
 _manifest_cache = None
-_golden_cache = None
 
 
 def _load():
-    global _model_cache, _manifest_cache, _golden_cache
+    global _model_cache, _manifest_cache
     if _model_cache is None:
         _manifest_cache = json.loads(MANIFEST_PATH.read_text())
         _model_cache = joblib.load(MODEL_PATH)
-        _golden_cache = json.loads(GOLDEN_FINAL_PATH.read_text())
-    return _model_cache, _manifest_cache, _golden_cache
+    # golden_reference.golden_final_kpis() has its own cache, and PAR-GOLDEN's
+    # batch_kpis row is a fixed reference - fetched via the shared module
+    # every call is cheap (cache hit after the first), and keeps this
+    # function's return value shaped exactly as callers already expect.
+    return _model_cache, _manifest_cache, golden_reference.golden_final_kpis()
 
 
 def _classify(bad_deviation_pct: float) -> str:
@@ -356,13 +242,13 @@ def _confidence_from_ci(ci_low: float, ci_high: float, golden: float, elapsed_mi
 
 
 def _band_half_width(key: str) -> float:
-    cfg = live_config.PARAMETER_CONFIG[key]
+    cfg = live_config.get_parameter_config()[key]
     return (cfg['upper_limit'] - cfg['lower_limit']) / 2
 
 
-def _residual_stats(b: dict, readings: list, key: str) -> tuple[float, float]:
-    """Mean and (population) std of the RESIDUAL (actual minus its own
-    phase-correct baseline, evaluated AT EACH reading's own elapsed minute -
+def _residual_stats(readings: list, key: str) -> tuple[float, float]:
+    """Mean and (population) std of the RESIDUAL (actual minus PAR-GOLDEN's
+    own real recorded value, evaluated AT EACH reading's own elapsed minute -
     not a single "now" or window-average baseline) across the given
     readings. This must be computed pointwise, not via mean_30/std_30 (which
     describe the RAW value's own spread): during a fast, entirely normal
@@ -371,27 +257,24 @@ def _residual_stats(b: dict, readings: list, key: str) -> tuple[float, float]:
     EXPECTED value itself sweeps through a wide range - that's not
     instability, and feeding it into the deviation score conflated the two,
     producing a large false score throughout every transition even when the
-    batch was tracking its expected curve perfectly. Computing the residual
-    at each point first (matching exactly how the synthetic training
-    labels were built - see generate_synthetic_kpi_data.py's
-    final_deviation_scores) removes that sweep entirely, leaving only real
-    deviation from expected. Uses each reading's own recorded Agitator RPM
-    for Temperature's shear-bump term - the real value, not a guess."""
+    batch was tracking PAR-GOLDEN's own curve perfectly. Computing the
+    residual at each point first removes that sweep entirely, leaving only
+    real deviation from expected."""
     residuals = []
     for r in readings:
-        baseline_t = _baseline_value(b, key, r.elapsed_minutes, r.agitator_rpm)
+        baseline_t = golden_reference.golden_value_at(key, r.elapsed_minutes)
         residuals.append(getattr(r, key) - baseline_t)
     arr = np.array(residuals)
     return float(arr.mean()), float(arr.std())
 
 
-def _parameter_deviation(b: dict, readings: list, key: str, elapsed_minutes: int) -> dict:
+def _parameter_deviation(readings: list, key: str, elapsed_minutes: int) -> dict:
     latest = readings[-1]
-    baseline_now = _baseline_value(b, key, elapsed_minutes, latest.agitator_rpm)
+    baseline_now = golden_reference.golden_value_at(key, elapsed_minutes)
     half_width = _band_half_width(key)
     current = getattr(latest, key)
 
-    residual_mean, residual_std = _residual_stats(b, readings, key)
+    residual_mean, residual_std = _residual_stats(readings, key)
     # Normalized deviation from the phase-correct baseline (0 = tracking it
     # exactly, ~1 = at the edge of the normal band, >1 = beyond it) - factors
     # in both how far off the average is and how unstable/jumpy the RESIDUAL
@@ -427,14 +310,10 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
     ci_low = np.percentile(tree_preds, 5, axis=0)
     ci_high = np.percentile(tree_preds, 95, axis=0)
 
-    # This batch's REAL phase-transition minutes, inferred from its own
-    # recorded telemetry - not nominal/unjittered timing. See
-    # _infer_phase_boundaries's docstring for why that distinction matters.
-    boundaries = _infer_phase_boundaries(get_telemetry_history(running_batch_id))
     recent_readings = get_recent_readings(running_batch_id, 30)
 
     parameter_deviations = {
-        key: _parameter_deviation(boundaries, recent_readings, key, elapsed_minutes) for key in live_config.PARAMETER_KEYS
+        key: _parameter_deviation(recent_readings, key, elapsed_minutes) for key in live_config.PARAMETER_KEYS
     }
     ranked_parameters = sorted(parameter_deviations.values(), key=lambda p: p['deviation_score'], reverse=True)
 
@@ -528,8 +407,23 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
         for c in calcs
     ]
 
+    # Newest-first, last HISTORY_MINUTES readings - all 4 process parameters,
+    # not just whichever 1-3 are flagged as top contributors above. Same
+    # convention as Process Monitoring's own History table.
+    history = [
+        {
+            'elapsed_minutes': r.elapsed_minutes,
+            'temperature': r.temperature,
+            'process_pressure': r.process_pressure,
+            'flow_rate': r.flow_rate,
+            'agitator_rpm': r.agitator_rpm,
+        }
+        for r in reversed(recent_readings[-HISTORY_MINUTES:])
+    ]
+
     return {
         'running_batch_id': running_batch_id,
         'elapsed_minutes': elapsed_minutes,
         'kpis': kpis,
+        'history': history,
     }

@@ -1,5 +1,8 @@
-"""The Process Parameter Deviation Agent - the second (and last) file in
-app/live/ that imports from the historical/ML plane, alongside ml_bridge.py.
+"""The Process Parameter Deviation Agent - one of the files in app/live/
+that reaches into the historical/ML plane (app_state), alongside
+ml_bridge.py and, via golden_reference.py, kpi_prediction_agent.py - all
+three now read the same real PAR-GOLDEN data through that shared module,
+rather than each having its own idea of "golden."
 
 Detect, Project, and Alert are fully deterministic, grounded in real data
 computed elsewhere in this codebase:
@@ -30,6 +33,7 @@ import json
 
 from app.config import FAULT_SIGNATURES_PATH, PARAMETER_LABELS, PARAMETER_UNITS
 from app.live import config as live_config
+from app.live import golden_reference
 from app.live.confidence import score_recommendation, score_root_cause
 from app.live.ml_bridge import compute_live_feature_row
 from app.live.models import ParameterAssessment, RunningBatch
@@ -38,23 +42,6 @@ from app.services.alert_service import classify_actual, classify_predicted
 from app.state import app_state
 
 _FAULT_SIGNATURES: dict = json.loads(FAULT_SIGNATURES_PATH.read_text())
-
-_golden_ts_cache = None
-
-
-def _golden_timeseries():
-    global _golden_ts_cache
-    if _golden_ts_cache is None:
-        _golden_ts_cache = app_state.timeseries_df[app_state.timeseries_df['batch_id'] == 'PAR-GOLDEN'].set_index('elapsed_minutes')
-    return _golden_ts_cache
-
-
-def _golden_value_at(key: str, elapsed_minutes: int) -> float:
-    golden = _golden_timeseries()
-    if elapsed_minutes in golden.index:
-        return float(golden.loc[elapsed_minutes, key])
-    clamped = min(max(elapsed_minutes, golden.index.min()), golden.index.max())
-    return float(golden.loc[clamped, key])
 
 
 def _envelope_offsets_at(key: str, elapsed_minutes: int) -> tuple[float, float]:
@@ -68,7 +55,7 @@ def _dynamic_band(key: str, elapsed_minutes: int) -> tuple[float, float, float]:
     """Returns (lower, upper, golden_value) - the same Golden(t)+/-Margin(t)
     band Process Monitoring's frontend already computes, replicated here so
     the agent's CURRENT-deviation judgment matches what the operator sees."""
-    golden = _golden_value_at(key, elapsed_minutes)
+    golden = golden_reference.golden_value_at(key, elapsed_minutes)
     lower_offset, upper_offset = _envelope_offsets_at(key, elapsed_minutes)
     return golden + lower_offset, golden + upper_offset, golden
 

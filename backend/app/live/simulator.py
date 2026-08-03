@@ -180,7 +180,8 @@ class BatchSimulator:
         onset = b['dispensing_end'] if key == 'agitator_rpm' else b['transfer_end']
         if t < onset:
             return 0.0
-        band_width = config.PARAMETER_CONFIG[key]['upper_limit'] - config.PARAMETER_CONFIG[key]['lower_limit']
+        param_cfg = config.get_parameter_config()[key]
+        band_width = param_cfg['upper_limit'] - param_cfg['lower_limit']
         rate = config.DRIFT_RATE_PER_MINUTE_FRACTION_OF_BAND[self.scenario_profile]
         return self._drift_direction[key] * rate * band_width * (t - onset)
 

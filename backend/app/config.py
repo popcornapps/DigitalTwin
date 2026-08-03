@@ -15,13 +15,6 @@ FAULT_SIGNATURES_PATH = DATA_DIR / 'paracetamol_fault_signatures.json'
 BATCH_KPIS_CSV = DATA_DIR / 'paracetamol_batch_kpis.csv'
 BATCH_KPIS_MANIFEST_PATH = DATA_DIR / 'paracetamol_batch_kpis_manifest.json'
 
-# Runtime persistence for the Process Parameter Deviation Agent's alerts -
-# unlike the files above (versioned dataset artifacts), this one is mutable
-# application state that changes on every tick, so it's gitignored rather
-# than committed. Lets the AI Review Desk act as a true recommendation
-# history that survives a backend restart, not just an in-memory list.
-LIVE_ALERTS_STORE_PATH = DATA_DIR / 'live_alerts_store.json'
-
 LOOKBACK_MINUTES = 30
 HORIZON_MINUTES = 30
 

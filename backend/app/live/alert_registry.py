@@ -6,11 +6,26 @@ updated in place while the deviation continues, marked 'Resolved' once it
 clears - which is what makes it a real, durable inbox item rather than a
 transient display value.
 
-Persisted to a JSON file on disk (app.config.LIVE_ALERTS_STORE_PATH), read
-back at startup - so the AI Review Desk acts as a true recommendation
-history that survives a backend restart, not just an in-memory list that
-resets every time the process restarts (which happens often in dev, since
---reload restarts on every .py file change).
+Persisted in the `alerts` Postgres table (see scripts/postgres-migration/
+schema_alerts.sql), read/written directly on every operation - so the AI
+Review Desk acts as a true recommendation history that survives a backend
+restart, not just an in-memory list that resets every time the process
+restarts (which happens often in dev, since --reload restarts on every .py
+file change). This used to be a hand-rolled JSON file
+(data/live_alerts_store.json, rewritten in full on every single mutation);
+Postgres does a single-row INSERT/UPDATE instead, and an indexed lookup
+instead of scanning every alert in memory for _find_open - the two things
+that made the JSON file get slower, not just bigger, the longer the backend
+ran. No in-memory cache is kept: every method queries/mutates the table
+directly, since a few thousand rows queried a few times a second is well
+within what Postgres does without needing one.
+
+list_alerts() only returns the last DISPLAY_RETENTION (currently 2 days) -
+a POC-scoped display limit, not a storage one. Every alert ever created
+stays in the table regardless; nothing here deletes anything. That's a
+deliberate difference from the old JSON file's retention, where pruning was
+load-bearing (the file itself had to stay small). Here it's purely a UI
+scoping choice, easy to widen or remove later without any data loss.
 
 This is also where the LLM reasoning layer (app.live.llm_agent) actually gets
 invoked: only when an alert is brand new, or its "reasoning fingerprint"
@@ -27,83 +42,103 @@ itself. llm_agent.py has the same property (zero historical/ML imports), so
 this file still never touches app.state/app.services/the trained model.
 """
 import asyncio
-import json
 import logging
-from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from app.config import LIVE_ALERTS_STORE_PATH
+import psycopg2.extras
+
+from app.db import get_connection
 from app.live import llm_agent
 from app.live.models import DeviationAlert, ParameterAssessment, RunningBatch
 
 logger = logging.getLogger(__name__)
 
-_DATETIME_FIELDS = ('created_at', 'resolved_at', 'human_decision_at')
+# POC-scoped display window for the AI Review Desk - full history stays in
+# Postgres regardless (unlike the old JSON file, storage isn't the
+# constraint here), this only limits what list_alerts() returns. Revisit
+# when this moves from occasional demo use to real sustained usage - at
+# that scale, prefer archiving old resolved alerts over deleting them, so
+# audit history isn't lost.
+DISPLAY_RETENTION = timedelta(days=2)
+
+# Column order used for every SELECT/INSERT/UPDATE below - matches
+# DeviationAlert's field order exactly (see app.live.models).
+ALERT_COLUMNS = [
+    'alert_id', 'running_batch_id', 'plant', 'parameter', 'trigger_type', 'severity',
+    'detected_at_elapsed_minutes', 'created_at', 'observation', 'predicted_observation',
+    'time_to_breach_minutes', 'confidence', 'likely_root_cause', 'recommended_action',
+    'status', 'resolved_at_elapsed_minutes', 'resolved_at',
+    'alert_summary', 'trigger_explanation', 'urgency', 'operational_impact',
+    'root_cause_confidence_pct', 'root_cause_confidence_level', 'root_cause_confidence_explanation',
+    'recommendation_confidence_pct', 'recommendation_confidence_level', 'recommendation_confidence_explanation',
+    'reasoning_source', 'human_decision', 'human_decision_at', 'reasoning_fingerprint',
+]
 
 
-def _serialize(alert: DeviationAlert) -> dict:
-    d = asdict(alert)
-    for key in _DATETIME_FIELDS:
-        if d[key] is not None:
-            d[key] = d[key].isoformat()
+def _row_to_alert(row: tuple) -> DeviationAlert:
+    d = dict(zip(ALERT_COLUMNS, row))
     if d['reasoning_fingerprint'] is not None:
-        d['reasoning_fingerprint'] = list(d['reasoning_fingerprint'])
-    return d
-
-
-def _deserialize(d: dict) -> DeviationAlert:
-    d = dict(d)
-    for key in _DATETIME_FIELDS:
-        if d.get(key):
-            d[key] = datetime.fromisoformat(d[key])
-    if d.get('reasoning_fingerprint') is not None:
         d['reasoning_fingerprint'] = tuple(d['reasoning_fingerprint'])
     return DeviationAlert(**d)
 
 
+def _alert_values(alert: DeviationAlert) -> list:
+    values = []
+    for col in ALERT_COLUMNS:
+        v = getattr(alert, col)
+        if col == 'reasoning_fingerprint' and v is not None:
+            v = psycopg2.extras.Json(list(v))
+        values.append(v)
+    return values
+
+
 class AlertRegistry:
     def __init__(self):
-        self._alerts: dict[str, DeviationAlert] = {}
-        self._seq = 0
-        self._load()
+        self._seq = self._load_seq()
 
-    def _load(self) -> None:
-        if not LIVE_ALERTS_STORE_PATH.exists():
-            return
-        try:
-            raw = json.loads(LIVE_ALERTS_STORE_PATH.read_text())
-        except Exception:
-            logger.exception('Failed to read %s - starting with an empty alert history.', LIVE_ALERTS_STORE_PATH)
-            return
-        for item in raw:
-            try:
-                alert = _deserialize(item)
-            except Exception:
-                logger.exception('Skipping unreadable stored alert: %r', item)
-                continue
-            self._alerts[alert.alert_id] = alert
-        if self._alerts:
-            # Keep handing out fresh IDs after a restart, not colliding with
-            # whatever was already persisted (ALERT-0001, ALERT-0002, ...).
-            self._seq = max(int(aid.split('-')[1]) for aid in self._alerts)
-
-    def _persist(self) -> None:
-        try:
-            LIVE_ALERTS_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            payload = [_serialize(a) for a in self._alerts.values()]
-            LIVE_ALERTS_STORE_PATH.write_text(json.dumps(payload, indent=2))
-        except Exception:
-            logger.exception('Failed to persist alert history to %s', LIVE_ALERTS_STORE_PATH)
+    @staticmethod
+    def _load_seq() -> int:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute('SELECT alert_id FROM alerts')
+            ids = [r[0] for r in cur.fetchall()]
+        if not ids:
+            return 0
+        # Keep handing out fresh IDs after a restart, not colliding with
+        # whatever's already stored (ALERT-0001, ALERT-0002, ...).
+        return max(int(aid.split('-')[1]) for aid in ids)
 
     def _next_id(self) -> str:
         self._seq += 1
         return f'ALERT-{self._seq:04d}'
 
-    def _find_open(self, batch_id: str, parameter: str) -> DeviationAlert | None:
-        for alert in self._alerts.values():
-            if alert.running_batch_id == batch_id and alert.parameter == parameter and alert.status == 'Open':
-                return alert
-        return None
+    @staticmethod
+    def _find_open(batch_id: str, parameter: str) -> DeviationAlert | None:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {', '.join(ALERT_COLUMNS)} FROM alerts "
+                "WHERE running_batch_id = %s AND parameter = %s AND status = 'Open' LIMIT 1",
+                (batch_id, parameter),
+            )
+            row = cur.fetchone()
+        return _row_to_alert(row) if row else None
+
+    @staticmethod
+    def _insert(alert: DeviationAlert) -> None:
+        col_list = ', '.join(ALERT_COLUMNS)
+        placeholders = ', '.join(['%s'] * len(ALERT_COLUMNS))
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(f'INSERT INTO alerts ({col_list}) VALUES ({placeholders})', _alert_values(alert))
+            conn.commit()
+
+    @staticmethod
+    def _update(alert: DeviationAlert) -> None:
+        set_clause = ', '.join(f'{col} = %s' for col in ALERT_COLUMNS if col != 'alert_id')
+        values = [getattr(alert, col) if col != 'reasoning_fingerprint' or getattr(alert, col) is None
+                  else psycopg2.extras.Json(list(getattr(alert, col)))
+                  for col in ALERT_COLUMNS if col != 'alert_id']
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(f'UPDATE alerts SET {set_clause} WHERE alert_id = %s', values + [alert.alert_id])
+            conn.commit()
 
     @staticmethod
     def _fingerprint(assessment: ParameterAssessment, severity: str) -> tuple:
@@ -141,7 +176,7 @@ class AlertRegistry:
                 existing.status = 'Resolved'
                 existing.resolved_at_elapsed_minutes = batch.elapsed_minutes
                 existing.resolved_at = datetime.now(timezone.utc)
-                self._persist()
+                self._update(existing)
             return
 
         severity = (assessment.llm_context or {}).get('severity') or (
@@ -177,12 +212,12 @@ class AlertRegistry:
                 assessment.recommended_action = existing.recommended_action
                 assessment.operational_impact = existing.operational_impact
                 assessment.reasoning_source = existing.reasoning_source
-                self._persist()
+                self._update(existing)
                 return
 
             reasoning = await asyncio.to_thread(llm_agent.generate_alert_reasoning, assessment.llm_context or {})
             self._apply_reasoning(existing, assessment, reasoning, fingerprint)
-            self._persist()
+            self._update(existing)
             return
 
         reasoning = await asyncio.to_thread(llm_agent.generate_alert_reasoning, assessment.llm_context or {})
@@ -210,25 +245,36 @@ class AlertRegistry:
             recommendation_confidence_explanation=assessment.recommendation_confidence_explanation,
         )
         self._apply_reasoning(alert, assessment, reasoning, fingerprint)
-        self._alerts[alert.alert_id] = alert
-        self._persist()
+        self._insert(alert)
 
-    def list_alerts(self, status: str | None = None) -> list[DeviationAlert]:
-        alerts = list(self._alerts.values())
+    @staticmethod
+    def list_alerts(status: str | None = None) -> list[DeviationAlert]:
+        cutoff = datetime.now(timezone.utc) - DISPLAY_RETENTION
+        query = f"SELECT {', '.join(ALERT_COLUMNS)} FROM alerts WHERE created_at > %s"
+        params: list = [cutoff]
         if status:
-            alerts = [a for a in alerts if a.status == status]
-        return sorted(alerts, key=lambda a: a.created_at, reverse=True)
+            query += ' AND status = %s'
+            params.append(status)
+        query += ' ORDER BY created_at DESC'
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+        return [_row_to_alert(row) for row in rows]
 
-    def get(self, alert_id: str) -> DeviationAlert | None:
-        return self._alerts.get(alert_id)
+    @staticmethod
+    def get(alert_id: str) -> DeviationAlert | None:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT {', '.join(ALERT_COLUMNS)} FROM alerts WHERE alert_id = %s", (alert_id,))
+            row = cur.fetchone()
+        return _row_to_alert(row) if row else None
 
     def _set_human_decision(self, alert_id: str, decision: str) -> DeviationAlert | None:
-        alert = self._alerts.get(alert_id)
+        alert = self.get(alert_id)
         if alert is None:
             return None
         alert.human_decision = decision
         alert.human_decision_at = datetime.now(timezone.utc)
-        self._persist()
+        self._update(alert)
         return alert
 
     def acknowledge(self, alert_id: str) -> DeviationAlert | None:

@@ -35,7 +35,22 @@ class KpiPredictionOut(BaseModel):
     reasoning_source: str
 
 
+class KpiHistoryPointOut(BaseModel):
+    """One raw telemetry reading, for the small multi-row history table
+    showing all 4 process parameters - not just whichever 1-3 are currently
+    flagged as top contributors above."""
+    elapsed_minutes: int
+    temperature: float
+    process_pressure: float
+    flow_rate: float
+    agitator_rpm: float
+
+
 class KpiPredictionResponse(BaseModel):
     running_batch_id: str
     elapsed_minutes: int
     kpis: list[KpiPredictionOut]
+    # Newest-first, capped to the last HISTORY_MINUTES readings (see
+    # kpi_prediction_agent.py) - same convention as Process Monitoring's own
+    # History table.
+    history: list[KpiHistoryPointOut]

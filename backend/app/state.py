@@ -4,6 +4,7 @@ import joblib
 import pandas as pd
 
 from app import config
+from app.db import get_connection
 
 
 class AppState:
@@ -26,18 +27,91 @@ class AppState:
         self.target_columns = self.manifest['target_columns']
         self.model = joblib.load(config.MODEL_PATH)
 
-        self.batches_df = pd.read_csv(config.BATCHES_CSV).set_index('batch_id')
-        self.timeseries_df = pd.read_csv(config.TIMESERIES_CSV)
-        self.batch_kpis_df = pd.read_csv(config.BATCH_KPIS_CSV).set_index('batch_id')
-        self.golden_envelope_df = pd.read_csv(config.GOLDEN_ENVELOPE_CSV).set_index('elapsed_minutes')
+        # Table 2 of the incremental Postgres cutover (see
+        # scripts/postgres-migration/) - was pd.read_csv(config.BATCHES_CSV).
+        # Two things are normalized right after the read so this DataFrame
+        # stays bit-for-bit identical to the CSV path's output:
+        #  1) pandas.read_csv's default NA-sniffing silently turned the CSV's
+        #     literal "None" text into real NaN for deviation_scenario/
+        #     deviation_severity - several call sites (ground_truth_severity,
+        #     _ground_truth_scenario) already depend on pd.isna() for this,
+        #     so Postgres's faithfully-stored "None" text has to become NaN
+        #     again here, not stay as the literal string.
+        #  2) batch_start_datetime is read back as a tz-aware Timestamp, but
+        #     data_service.py does str(row['batch_start_datetime']) straight
+        #     into an API response - reformatted back to the exact original
+        #     "...T19:00:00.000Z" text so that response is unchanged.
+        with get_connection() as conn:
+            self.batches_df = pd.read_sql(
+                'SELECT batch_id, plant, is_golden_batch, batch_start_datetime, batch_duration_minutes, '
+                'deviation_scenario, deviation_severity, theoretical_output_kg, actual_output_kg, '
+                'energy_kwh, assay_pct FROM batches',
+                conn,
+            ).set_index('batch_id')
+        self.batches_df['deviation_scenario'] = self.batches_df['deviation_scenario'].replace('None', pd.NA)
+        self.batches_df['deviation_severity'] = self.batches_df['deviation_severity'].replace('None', pd.NA)
+        self.batches_df['batch_start_datetime'] = self.batches_df['batch_start_datetime'].dt.strftime(
+            '%Y-%m-%dT%H:%M:%S.000Z'
+        )
 
-        needed_columns = ['batch_id', 'split', 'elapsed_minutes'] + self.feature_columns + self.target_columns
-        self.training_df = pd.read_csv(config.TRAINING_DATASET_CSV, usecols=needed_columns)
+        # Table 3 of the incremental Postgres cutover - was
+        # pd.read_csv(config.TIMESERIES_CSV). No CSV-parsing quirks to
+        # replicate here (unlike batches above): every consumer
+        # (data_service.get_timeline, deviation_agent._golden_value_at)
+        # already explicitly casts to float()/int() before use, and neither
+        # depends on this DataFrame's row order or index.
+        with get_connection() as conn:
+            self.timeseries_df = pd.read_sql(
+                'SELECT batch_id, elapsed_minutes, temperature, process_pressure, flow_rate, agitator_rpm '
+                'FROM batch_timeseries',
+                conn,
+            )
+        # Table 4 - was pd.read_csv(config.BATCH_KPIS_CSV). No gotchas:
+        # _build_batch_kpis already explicitly casts every field with
+        # float()/str(), and its one nullable column (fault_onset_elapsed_minutes)
+        # is a genuinely blank CSV cell (real NaN both before and after), not
+        # the "None"-text case batches.csv has.
+        with get_connection() as conn:
+            self.batch_kpis_df = pd.read_sql('SELECT * FROM batch_kpis', conn).set_index('batch_id')
+
+        # Table 5 - was pd.read_csv(config.GOLDEN_ENVELOPE_CSV). All 8 offset
+        # columns are floats, no nullable/text columns at all.
+        with get_connection() as conn:
+            self.golden_envelope_df = pd.read_sql('SELECT * FROM golden_envelope', conn).set_index('elapsed_minutes')
+
+        # Table 6 - was pd.read_csv(config.TRAINING_DATASET_CSV, usecols=needed_columns).
+        # get_feature_row/model_service.predict both look up columns by name
+        # (feature_row[col] for col in state.feature_columns), never by
+        # position, so column order here doesn't need to match the CSV's -
+        # only that every needed column is present with the right values.
+        # De-duplicated with dict.fromkeys() (order-preserving) because
+        # feature_columns already includes 'elapsed_minutes' as its first
+        # entry - pandas' usecols= silently tolerated that repeat (it's just
+        # a filter set), but a literal SQL column list doesn't: an unde-duped
+        # SELECT would ask for elapsed_minutes twice and hand back two
+        # identically-named columns, breaking every == comparison downstream.
+        needed_columns = list(dict.fromkeys(
+            ['batch_id', 'split', 'elapsed_minutes'] + self.feature_columns + self.target_columns
+        ))
+        with get_connection() as conn:
+            self.training_df = pd.read_sql(
+                f"SELECT {', '.join(needed_columns)} FROM training_dataset", conn
+            )
         self.test_batch_ids = set(self.training_df.loc[self.training_df['split'] == 'test', 'batch_id'].unique())
 
-        param_config = pd.read_csv(config.PARAMETER_CONFIG_CSV).set_index('parameter')
+        # Table 1 of the incremental Postgres cutover (see
+        # scripts/postgres-migration/) - was pd.read_csv(config.PARAMETER_CONFIG_CSV).
+        # Only the 4 parameters in PARAMETER_CONFIG_NAMES are fetched, matching
+        # the CSV path's behavior exactly (the CSV's 5th row, "Assay", was
+        # already unused here - see PARAMETER_CONFIG_NAMES).
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                'SELECT parameter, lower_limit, upper_limit FROM parameters WHERE parameter = ANY(%s)',
+                (list(config.PARAMETER_CONFIG_NAMES.values()),),
+            )
+            limits_by_name = {name: (lower, upper) for name, lower, upper in cur.fetchall()}
         self.parameter_limits = {
-            key: (float(param_config.loc[name, 'lower_limit']), float(param_config.loc[name, 'upper_limit']))
+            key: (float(limits_by_name[name][0]), float(limits_by_name[name][1]))
             for key, name in config.PARAMETER_CONFIG_NAMES.items()
         }
 

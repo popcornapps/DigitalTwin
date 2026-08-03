@@ -1,6 +1,14 @@
 """Constants for the live-batch simulator. Deliberately self-contained (no
 import from app.config / app.state) so the live subsystem stays fully
 decoupled from the historical/ML plane, per the running-batch design doc.
+get_parameter_config() below is the one exception to "no cross-plane
+values": it reads the `parameters` Postgres table - the same physical table
+app_state.parameter_limits reads - via app.db (a generic connection helper,
+not historical/ML business logic, so this doesn't reintroduce the coupling
+the decoupling rule is actually about). It keeps its own local
+_PARAMETER_TABLE_NAMES mapping rather than importing
+app.config.PARAMETER_CONFIG_NAMES, so this module still never imports
+app.config itself.
 
 Physical constants below are a Python port of
 scripts/generate-dataset/config.ts - kept in sync by hand since that file is
@@ -8,17 +16,51 @@ the historical generator's own source of truth and isn't imported here.
 """
 import os
 
+from app.db import get_connection
+
 PLANTS = ['Hyderabad Plant']
 
 PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate', 'agitator_rpm')
 
-# Ported from scripts/generate-dataset/config.ts's PARAMETER_CONFIG.
-PARAMETER_CONFIG = {
-    'temperature': {'unit': '°C', 'golden_target': 65.5, 'lower_limit': 63.0, 'upper_limit': 67.0},
-    'process_pressure': {'unit': 'bar', 'golden_target': 1.2, 'lower_limit': 1.1, 'upper_limit': 1.3},
-    'flow_rate': {'unit': 'L/min', 'golden_target': 48.5, 'lower_limit': 45.0, 'upper_limit': 52.0},
-    'agitator_rpm': {'unit': 'RPM', 'golden_target': 22.0, 'lower_limit': 20.0, 'upper_limit': 24.0},
+# Maps this module's internal snake_case keys to the `parameters` table's
+# display-name primary key - a local duplicate of app.config's
+# PARAMETER_CONFIG_NAMES, kept separate rather than imported (see module
+# docstring for why).
+_PARAMETER_TABLE_NAMES = {
+    'temperature': 'Temperature',
+    'process_pressure': 'Process Pressure',
+    'flow_rate': 'Flow Rate',
+    'agitator_rpm': 'Agitator RPM',
 }
+
+_parameter_config_cache: dict | None = None
+
+
+def get_parameter_config() -> dict:
+    """Same shape as the old hardcoded PARAMETER_CONFIG dict this replaces
+    (see scripts/postgres-migration/) - loaded once and cached, not queried
+    per call, since this is read on every simulator tick for every running
+    batch (see simulator.py's _drift_offset) and a per-tick DB round trip
+    there would be wasteful."""
+    global _parameter_config_cache
+    if _parameter_config_cache is None:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                'SELECT parameter, unit, golden_target, lower_limit, upper_limit '
+                'FROM parameters WHERE parameter = ANY(%s)',
+                (list(_PARAMETER_TABLE_NAMES.values()),),
+            )
+            rows_by_name = {name: (unit, target, lower, upper) for name, unit, target, lower, upper in cur.fetchall()}
+        _parameter_config_cache = {
+            key: {
+                'unit': rows_by_name[name][0],
+                'golden_target': rows_by_name[name][1],
+                'lower_limit': rows_by_name[name][2],
+                'upper_limit': rows_by_name[name][3],
+            }
+            for key, name in _PARAMETER_TABLE_NAMES.items()
+        }
+    return _parameter_config_cache
 
 # Ported from scripts/generate-dataset/config.ts's NOMINAL_PHASE_DURATIONS.
 NOMINAL_PHASE_DURATIONS = {
