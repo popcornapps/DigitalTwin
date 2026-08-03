@@ -2,7 +2,7 @@
 table, so the AI Review Desk's history isn't wiped out by the cutover.
 
 Run once, before alert_registry.py is switched over to Postgres:
-    .venv/bin/python scripts/postgres-migration/import_alerts.py
+    .venv/bin/python backend/scripts/postgres-migration/import_alerts.py
 """
 import json
 import os
@@ -13,10 +13,10 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-STORE_PATH = REPO_ROOT / 'data' / 'live_alerts_store.json'
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+STORE_PATH = BACKEND_ROOT / 'data' / 'live_alerts_store.json'
 
-load_dotenv(REPO_ROOT / 'backend' / '.env')
+load_dotenv(BACKEND_ROOT / '.env')
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 COLUMNS = [

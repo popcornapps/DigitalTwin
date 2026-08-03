@@ -72,21 +72,19 @@ calibrated to the real golden batch in the first place.
 """
 import concurrent.futures
 import json
-from pathlib import Path
 
 import joblib
 import numpy as np
 
-from app.config import PARAMETER_LABELS, PARAMETER_UNITS
+from app.config import MODEL_DIR, PARAMETER_LABELS, PARAMETER_UNITS
 from app.live import ai_mode, config as live_config
 from app.live import golden_reference
 from app.live import kpi_llm_agent
 from app.live.ml_bridge import compute_live_feature_row
 from app.live.service import get_recent_readings
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-MODEL_PATH = REPO_ROOT / 'models' / 'synthetic_kpi_random_forest.joblib'
-MANIFEST_PATH = REPO_ROOT / 'models' / 'synthetic_kpi_random_forest_manifest.json'
+MODEL_PATH = MODEL_DIR / 'synthetic_kpi_random_forest.joblib'
+MANIFEST_PATH = MODEL_DIR / 'synthetic_kpi_random_forest_manifest.json'
 
 KPI_LABELS = {
     'yield_pct': 'Yield',

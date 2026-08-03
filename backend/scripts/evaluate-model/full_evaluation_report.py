@@ -1,8 +1,8 @@
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / 'backend'))
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BACKEND_ROOT))
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,7 @@ import pandas as pd
 from app.state import AppState
 from app.services import alert_service
 
-OUT_DIR = REPO_ROOT / 'reports' / 'paracetamol_random_forest'
+OUT_DIR = BACKEND_ROOT / 'reports' / 'paracetamol_random_forest'
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 DRYING_PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate')

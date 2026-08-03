@@ -11,7 +11,7 @@ Requires DATABASE_URL in backend/.env, e.g.:
     DATABASE_URL=postgresql://user:password@localhost:5432/digital_twin
 
 Run from the repo root with the project's existing venv:
-    .venv/bin/python scripts/postgres-migration/import_csvs.py
+    .venv/bin/python backend/scripts/postgres-migration/import_csvs.py
 """
 import os
 import sys
@@ -20,10 +20,10 @@ from pathlib import Path
 import psycopg2
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / 'data'
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = BACKEND_ROOT / 'data'
 
-load_dotenv(REPO_ROOT / 'backend' / '.env')
+load_dotenv(BACKEND_ROOT / '.env')
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 

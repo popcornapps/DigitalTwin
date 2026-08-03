@@ -28,13 +28,13 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / 'backend'))
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BACKEND_ROOT))
 
 from app import config  # noqa: E402
 
-OUT_CSV = REPO_ROOT / 'data' / 'paracetamol_batch_kpis.csv'
-OUT_MANIFEST = REPO_ROOT / 'data' / 'paracetamol_batch_kpis_manifest.json'
+OUT_CSV = config.BATCH_KPIS_CSV
+OUT_MANIFEST = config.BATCH_KPIS_MANIFEST_PATH
 
 GENERATION_METHOD_VERSION = 'v2'
 GOLDEN_BATCH_ID = 'PAR-GOLDEN'

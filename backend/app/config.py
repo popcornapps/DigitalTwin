@@ -1,8 +1,8 @@
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / 'data'
-MODEL_DIR = REPO_ROOT / 'models'
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = BACKEND_ROOT / 'data'
+MODEL_DIR = BACKEND_ROOT / 'models'
 
 MODEL_PATH = MODEL_DIR / 'paracetamol_random_forest.joblib'
 MANIFEST_PATH = MODEL_DIR / 'paracetamol_random_forest_manifest.json'

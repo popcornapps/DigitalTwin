@@ -5,7 +5,7 @@ else compared exactly, including the literal "None" text - this runs BEFORE
 cleanup_none_values.sql, so a real NULL here would itself be a mismatch).
 
 Run from the repo root with the project's existing venv:
-    .venv/bin/python scripts/postgres-migration/verify_import.py
+    .venv/bin/python backend/scripts/postgres-migration/verify_import.py
 """
 import os
 import sys
@@ -16,10 +16,10 @@ import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / 'data'
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = BACKEND_ROOT / 'data'
 
-load_dotenv(REPO_ROOT / 'backend' / '.env')
+load_dotenv(BACKEND_ROOT / '.env')
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
