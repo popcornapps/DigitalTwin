@@ -19,11 +19,11 @@ export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages
   },
   'Plant Operator': {
     landingPage: '/process-monitoring',
-    visiblePages: ['/process-monitoring', '/batch-explorer', '/kpi-deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/process-monitoring', '/batch-explorer', '/review-desk', '/ai-copilot', '/settings']
   },
   'Quality Engineer': {
     landingPage: '/batch-explorer',
-    visiblePages: ['/batch-explorer', '/kpi-deviation-prediction', '/review-desk', '/ai-copilot', '/settings']
+    visiblePages: ['/batch-explorer', '/review-desk', '/ai-copilot', '/settings']
   }
 };
 
