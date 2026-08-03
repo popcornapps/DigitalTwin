@@ -411,10 +411,21 @@ export interface KpiPrediction {
   reasoning_source: 'static' | 'llm';
 }
 
+export interface KpiHistoryPoint {
+  elapsed_minutes: number;
+  temperature: number;
+  process_pressure: number;
+  flow_rate: number;
+  agitator_rpm: number;
+}
+
 export interface KpiPredictionResponse {
   running_batch_id: string;
   elapsed_minutes: number;
   kpis: KpiPrediction[];
+  // Newest-first, last 10 readings, all 4 process parameters - not just
+  // whichever 1-3 are flagged as top contributors in kpis[].contributing_parameters.
+  history: KpiHistoryPoint[];
 }
 
 export const fetchKpiPrediction = (runningBatchId: string): Promise<KpiPredictionResponse> =>

@@ -393,6 +393,45 @@ export default function KpiDeviationPrediction() {
                 )}
               </div>
 
+              {/* All 4 process parameters, not just whichever 1-3 are
+                  flagged as top contributors above - so a parameter that's
+                  currently fine is still visible, not just the ones singled
+                  out as problems. Same table convention as Process
+                  Monitoring's own History table. */}
+              {prediction.history.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                    Process Parameter History <span className="font-normal text-gray-400">(last {prediction.history.length} min)</span>
+                  </h3>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="overflow-y-auto max-h-64">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="text-gray-400 text-[11.25px] uppercase tracking-wide bg-gray-50">
+                            <th className="text-left font-semibold px-3 py-2">Min</th>
+                            <th className="text-right font-semibold px-3 py-2">Temperature (°C)</th>
+                            <th className="text-right font-semibold px-3 py-2">Pressure (bar)</th>
+                            <th className="text-right font-semibold px-3 py-2">Flow Rate (L/min)</th>
+                            <th className="text-right font-semibold px-3 py-2">Agitator (RPM)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {prediction.history.map((row, idx) => (
+                            <tr key={row.elapsed_minutes} className={idx === 0 ? 'bg-indigo-50' : ''}>
+                              <td className={`px-3 py-1.5 font-medium ${idx === 0 ? 'text-indigo-700' : 'text-gray-500'}`}>{row.elapsed_minutes}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.temperature.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.process_pressure.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.flow_rate.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.agitator_rpm.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
                 <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1.5">Recommended Action</h3>
                 <p className="text-sm text-indigo-900 leading-relaxed">{selectedKpi.recommended_action}</p>
