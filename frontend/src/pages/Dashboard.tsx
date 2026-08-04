@@ -9,8 +9,8 @@ import { getMockKPIs, getMockParameters, getMockTrendData, getMockAnomalies } fr
 import { useFilter } from '../context/FilterContext';
 import { KPIInfoModal } from '../components/KPIInfoModal';
 import { getKPIDefinition } from '../lib/kpiDefinitions';
-import { fetchPlantKpiRollup } from '../lib/api';
-import type { PlantKpiRollup } from '../lib/api';
+import { fetchPlantKpiRollup, fetchPlantCurrentPeriodKpi, fetchRunningBatches, fetchAlerts, fetchBatches, fetchAllBatchKPIs } from '../lib/api';
+import type { PlantKpiRollup, PlantPeriodKpi, DeviationAlert, BatchKPIs } from '../lib/api';
 
 export default function Dashboard() {
   const { selectedPlant, selectedProduct, selectedBatch, selectedPersona } = useFilter();
@@ -20,6 +20,30 @@ export default function Dashboard() {
   // Manager persona reads this; Operator/QE views are untouched here.
   const [plantRollup, setPlantRollup] = useState<PlantKpiRollup | null>(null);
   const [plantRollupError, setPlantRollupError] = useState<string | null>(null);
+
+  // Total Production (Current Shift / Today / This Month) - resolves the
+  // REAL current shift/day/month (server clock) via
+  // fetchPlantCurrentPeriodKpi, not "whichever period is latest in the
+  // data" - now that live batch completions carry real timestamps, this
+  // genuinely reflects today's calendar date, showing zero rather than a
+  // stale period if nothing has completed yet in the current window.
+  const [currentShiftKpi, setCurrentShiftKpi] = useState<PlantPeriodKpi | null>(null);
+  const [todayKpi, setTodayKpi] = useState<PlantPeriodKpi | null>(null);
+  const [thisMonthKpi, setThisMonthKpi] = useState<PlantPeriodKpi | null>(null);
+  const [periodKpiError, setPeriodKpiError] = useState<string | null>(null);
+
+  // Production Run Summary side panel - Running Batches count, real live data.
+  const [runningBatchCount, setRunningBatchCount] = useState<number | null>(null);
+
+  // Recent Operational Alerts - real, from the Process Parameter Deviation
+  // Agent (app.live.deviation_agent / alert_registry), not fake equipment
+  // names. Only Open alerts for this plant.
+  const [openAlerts, setOpenAlerts] = useState<DeviationAlert[] | null>(null);
+
+  // Plant Performance Trend - real, one point per recent completed batch
+  // (real oee_pct vs the golden batch's oee_pct), not a fake 24-hour curve.
+  const [batchTrend, setBatchTrend] = useState<{ date: string; current: number; best: number }[] | null>(null);
+  const RECENT_BATCH_TREND_COUNT = 10;
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +56,81 @@ export default function Dashboard() {
       .catch((err) => {
         if (!cancelled) setPlantRollupError(err instanceof Error ? err.message : String(err));
       });
+
+    setCurrentShiftKpi(null);
+    setTodayKpi(null);
+    setThisMonthKpi(null);
+    setPeriodKpiError(null);
+    Promise.all([
+      fetchPlantCurrentPeriodKpi(selectedPlant, 'shift'),
+      fetchPlantCurrentPeriodKpi(selectedPlant, 'day'),
+      fetchPlantCurrentPeriodKpi(selectedPlant, 'month'),
+    ])
+      .then(([shiftRes, dayRes, monthRes]) => {
+        if (cancelled) return;
+        setCurrentShiftKpi(shiftRes);
+        setTodayKpi(dayRes);
+        setThisMonthKpi(monthRes);
+      })
+      .catch((err) => {
+        if (!cancelled) setPeriodKpiError(err instanceof Error ? err.message : String(err));
+      });
+
+    setRunningBatchCount(null);
+    setOpenAlerts(null);
+    Promise.all([fetchRunningBatches(), fetchAlerts('Open')])
+      .then(([runningBatches, alerts]) => {
+        if (cancelled) return;
+        const currentlyRunningIds = new Set(
+          runningBatches.filter((b) => b.plant === selectedPlant && b.status === 'Running').map((b) => b.running_batch_id)
+        );
+        setRunningBatchCount(currentlyRunningIds.size);
+        // Only alerts for batches that are STILL Running right now - an
+        // Open alert whose batch has since Completed/Stopped no longer
+        // reflects a live operational concern for this panel.
+        setOpenAlerts(alerts.filter((a) => a.plant === selectedPlant && currentlyRunningIds.has(a.running_batch_id)));
+      })
+      .catch(() => {
+        // Non-critical for this panel - leave as null (renders '—'/empty)
+        // rather than surfacing a separate error state.
+      });
+
+    setBatchTrend(null);
+    // Per-batch "Plant Performance" composite - average of OEE + Quality
+    // Score + Yield for that one batch, mirroring the plant-level Plant
+    // Performance formula (which averages OEE/Quality/Process Stability
+    // across ALL batches) but swapping in Yield instead of Process
+    // Stability - Process Stability isn't shown anywhere else on this
+    // dashboard, while Yield is one of the two core batch KPIs (alongside
+    // SEC) this system is built around.
+    const batchPerformance = (k: BatchKPIs) => (k.oee_pct + k.quality_score_pct + k.yield_pct) / 3;
+    Promise.all([fetchBatches('all'), fetchAllBatchKPIs()])
+      .then(([batches, kpis]) => {
+        if (cancelled) return;
+        const kpiByBatchId = new Map(kpis.map((k: BatchKPIs) => [k.batch_id, k]));
+        const goldenKpis = kpiByBatchId.get('PAR-GOLDEN');
+        const goldenPerformance = goldenKpis ? batchPerformance(goldenKpis) : null;
+        // fetchBatches('all') is already sorted newest-first (backend) -
+        // take the most recent N, then reverse so the chart reads
+        // oldest -> newest left to right.
+        const recent = batches
+          .filter((b) => b.plant === selectedPlant && b.batch_id !== 'PAR-GOLDEN')
+          .slice(0, RECENT_BATCH_TREND_COUNT)
+          .reverse();
+        setBatchTrend(
+          recent
+            .map((b) => {
+              const batchKpis = kpiByBatchId.get(b.batch_id);
+              if (!batchKpis || goldenPerformance === null) return null;
+              return { date: b.batch_start_datetime.slice(0, 10), current: batchPerformance(batchKpis), best: goldenPerformance };
+            })
+            .filter((p): p is { date: string; current: number; best: number } => p !== null)
+        );
+      })
+      .catch(() => {
+        // Non-critical - leave as null (renders nothing / falls back).
+      });
+
     return () => {
       cancelled = true;
     };
@@ -208,21 +307,47 @@ export default function Dashboard() {
 
   const activeAnomaly = enrichedAnomalies.find(a => a.id === activeAnomalyId) || enrichedAnomalies[0] || null;
 
-  // AI insights (Manager persona) - real, driven by the plant KPI rollup
+  // Matches backend's MAX_BATCHES_PER_PLANT_PER_DAY (app/live/config.py) -
+  // not fetched dynamically, no API exposes it yet; same hardcoded value
+  // already shown in the Production Run Summary panel's "Planned runs" card.
+  const plannedBatchesPerDay = 8;
+  const criticalAlertCount = openAlerts?.filter((a) => a.severity === 'Critical').length ?? 0;
+
+  // AI insights (Manager persona) - real, driven by the plant KPI rollup,
+  // today's real completed-batch count, and real open alerts (no more
+  // static placeholder text for any of the 4 lines).
   const aiExecutiveInsights = plantRollup ? [
     `Plant performance remains ${plantRollup.plant_performance_pct > 90 ? 'above' : 'below'} baseline target.`,
-    "Production schedule is progressing as planned with minor delays.",
+    todayKpi
+      ? `${todayKpi.batch_count} of ${plannedBatchesPerDay} planned batches completed today.`
+      : "Loading today's production count…",
     `OEE across ${plantRollup.batch_count} recorded batches is ${plantRollup.oee_pct > 90 ? 'strong' : 'below target'} at ${plantRollup.oee_pct}%.`,
-    "No major quality or safety risks detected for the active shift."
+    openAlerts
+      ? (criticalAlertCount > 0
+          ? `${criticalAlertCount} critical alert${criticalAlertCount > 1 ? 's' : ''} require attention.`
+          : 'No major quality or safety risks detected currently.')
+      : 'Loading alert status…',
   ] : [
     "Loading plant performance rollup…",
   ];
 
-  const recentAlerts = [
-    { id: 1, severity: 'Warning', equipment: 'Boiler Sys-A', desc: 'Temperature slightly higher than expected.' },
-    { id: 2, severity: 'Critical', equipment: 'Packaging Line 2', desc: 'Line temporarily stopped due to sensor fault.' },
-    { id: 3, severity: 'Warning', equipment: 'Mixer Unit 4', desc: 'Vibration levels nearing upper control limit.' }
-  ];
+  // Real alerts from either the Process Parameter Deviation Agent or the KPI
+  // Prediction Agent - Critical first, then newest first within each severity,
+  // capped at 5 for this summary
+  // panel (see /api/alerts / AI Review Desk for the full list).
+  const recentAlerts = (openAlerts ?? [])
+    .slice()
+    .sort((a, b) => {
+      if (a.severity !== b.severity) return a.severity === 'Critical' ? -1 : 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    })
+    .slice(0, 5)
+    .map((a) => ({
+      id: a.alert_id,
+      severity: a.severity,
+      equipment: `${a.parameter_label} · ${a.running_batch_id}`,
+      desc: a.observation,
+    }));
 
   /* ---------------- RENDERING DECISIONS ---------------- */
 
@@ -266,11 +391,14 @@ export default function Dashboard() {
       {/* 1. KPI Cards Row */}
       {selectedPersona === 'Plant Manager' && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <KPICard title="Plant Performance" value={plantRollup ? `${plantRollup.plant_performance_pct}%` : '—'} trend="flat" trendValue={plantRollup ? `${plantRollup.batch_count} batches` : plantRollupError ? 'Error' : 'Loading'} desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" kpiId="plantPerformance" onClick={() => setActiveKPIId('plantPerformance')} />
-          <KPICard title="OEE" value={plantRollup ? `${plantRollup.oee_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" kpiId="oee" onClick={() => setActiveKPIId('oee')} />
-          <KPICard title="Quality Score" value={plantRollup ? `${plantRollup.quality_score_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" kpiId="qualityScore" onClick={() => setActiveKPIId('qualityScore')} />
-          <KPICard title="Production Status" value="4 / 6" trend="up" trendValue="On Track" desc="Running vs Completed Batches" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
-          <KPICard title="Active Alerts" value="2" trend="down" trendValue="-3 issues" desc="Current operational warnings" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" />
+          <KPICard title="Plant Performance" value={plantRollup ? `${plantRollup.plant_performance_pct}%` : '—'} trend="flat" trendValue={plantRollup ? `${plantRollup.batch_count} batches` : plantRollupError ? 'Error' : 'Loading'} desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" />
+          <KPICard title="OEE" value={plantRollup ? `${plantRollup.oee_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" />
+          <KPICard title="Quality Score" value={plantRollup ? `${plantRollup.quality_score_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" />
+          <KPICard title="Energy Consumption" value={plantRollup ? `${plantRollup.total_energy_consumption_kwh.toLocaleString()} kWh` : '—'} trend="flat" trendValue={plantRollup ? `${plantRollup.batch_count} batches` : plantRollupError ? 'Error' : 'Loading'} desc="Overall plant energy usage" icon={<Zap />} color="text-amber-600" bg="bg-amber-50" />
+          <KPICard title="Production (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest completed shift" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
+          <KPICard title="Production (Today)" value={todayKpi ? `${todayKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest day in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
+          <KPICard title="Production (This Month)" value={thisMonthKpi ? `${thisMonthKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest month in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
+          <KPICard title="Active Alerts" value={openAlerts ? String(openAlerts.length) : '—'} trend="flat" trendValue={openAlerts ? (criticalAlertCount > 0 ? `${criticalAlertCount} critical` : 'None critical') : 'Loading'} desc="Current operational warnings" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" />
         </div>
       )}
 
@@ -322,47 +450,40 @@ export default function Dashboard() {
             <>
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Plant Performance Trend (24 Hours)</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">Comparing current shift efficiency against historical peak average</p>
+                  <h2 className="text-lg font-bold text-gray-900">Plant Performance Trend (Last {RECENT_BATCH_TREND_COUNT} Batches)</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Real avg(OEE, Quality, Yield) per completed batch vs. the golden batch reference</p>
                 </div>
                 <div className="flex gap-4 text-sm bg-gray-50 border border-gray-100 rounded-lg p-3 shrink-0">
                   <div>
-                    <div className="text-gray-500 text-[11.25px] font-bold uppercase tracking-wider">Today's Avg</div>
-                    <div className="font-extrabold text-gray-900 text-sm">93.5%</div>
+                    <div className="text-gray-500 text-[11.25px] font-bold uppercase tracking-wider">Recent Avg</div>
+                    <div className="font-extrabold text-gray-900 text-sm">
+                      {batchTrend && batchTrend.length > 0
+                        ? `${(batchTrend.reduce((sum, p) => sum + p.current, 0) / batchTrend.length).toFixed(1)}%`
+                        : '—'}
+                    </div>
                   </div>
                   <div className="w-px bg-gray-200"></div>
                   <div>
-                    <div className="text-gray-500 text-[11.25px] font-bold uppercase tracking-wider">Historical Peak</div>
-                    <div className="font-extrabold text-yellow-600 text-sm">96.2%</div>
+                    <div className="text-gray-500 text-[11.25px] font-bold uppercase tracking-wider">Recent Peak</div>
+                    <div className="font-extrabold text-yellow-600 text-sm">
+                      {batchTrend && batchTrend.length > 0
+                        ? `${Math.max(...batchTrend.map((p) => p.current)).toFixed(1)}%`
+                        : '—'}
+                    </div>
                   </div>
                 </div>
               </div>
-              
+
               <div className="h-72 flex-1 min-h-[250px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={(() => {
-                    // Real plant_performance_pct anchors the series; the intraday
-                    // shape itself isn't tracked hourly by batch_kpis (a per-batch,
-                    // not per-hour, dataset) so the same offsets used before are
-                    // kept to illustrate a trend around the one real anchor value.
-                    const base = plantRollup?.plant_performance_pct ?? 0;
-                    return [
-                      { time: '00:00', current: base - 6, best: 95 },
-                      { time: '04:00', current: base - 2, best: 96 },
-                      { time: '08:00', current: base + 1, best: 96 },
-                      { time: '12:00', current: base - 3, best: 97 },
-                      { time: '16:00', current: base, best: 96 },
-                      { time: '20:00', current: base + 2, best: 98 },
-                      { time: '24:00', current: base + 1, best: 97 },
-                    ];
-                  })()}>
+                  <LineChart data={batchTrend ?? []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                    <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis domain={[80, 100]} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} />
+                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis domain={[0, 100]} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} />
                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: '11px' }}/>
-                    <Line type="monotone" dataKey="current" name="Current Shift Performance" stroke="#3b82f6" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="best" name="Optimal Reference Run" stroke="#eab308" strokeWidth={2.5} dot={false} strokeDasharray="4 4" />
+                    <Line type="monotone" dataKey="current" name="Batch Performance" stroke="#3b82f6" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="best" name="Golden Batch Performance" stroke="#eab308" strokeWidth={2.5} dot={false} strokeDasharray="4 4" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -453,19 +574,22 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm">
                 <div>
                   <div className="text-gray-400 text-xs">Running Batches</div>
-                  <div className="font-black text-gray-800 text-base mt-0.5">2</div>
+                  <div className="font-black text-gray-800 text-base mt-0.5">{runningBatchCount ?? '—'}</div>
                 </div>
                 <div>
                   <div className="text-gray-400 text-xs">Completed today</div>
-                  <div className="font-black text-gray-800 text-base mt-0.5">4</div>
+                  <div className="font-black text-gray-800 text-base mt-0.5">{todayKpi ? todayKpi.batch_count : '—'}</div>
                 </div>
                 <div>
                   <div className="text-gray-400 text-xs">Planned runs</div>
+                  {/* No scheduling/planning concept exists in the backend yet
+                      (only completed-historical and currently-running batches)
+                      - kept as a placeholder until that data model exists. */}
                   <div className="font-black text-gray-800 text-base mt-0.5">8</div>
                 </div>
                 <div>
                   <div className="text-gray-400 text-xs">Active Shift</div>
-                  <div className="font-extrabold text-blue-600 text-sm mt-0.5">Day Shift B</div>
+                  <div className="font-extrabold text-blue-600 text-sm mt-0.5">{currentShiftKpi ? currentShiftKpi.period_label : '—'}</div>
                 </div>
               </div>
             </div>
@@ -528,7 +652,7 @@ export default function Dashboard() {
           {/* Bottom Side Panel Card (Insights) */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex-1 flex flex-col justify-between">
             <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest mb-3.5 flex items-center gap-2">
-              <Zap className="text-amber-500 h-5 w-5" /> AI {selectedPersona === 'Plant Manager' ? 'Plant Insights' : selectedPersona === 'Plant Operator' ? 'Process Observation' : 'Quality Assessment'}
+              <Zap className="text-amber-500 h-5 w-5" /> {selectedPersona === 'Plant Manager' ? 'Plant Insights' : selectedPersona === 'Plant Operator' ? 'AI Process Observation' : 'AI Quality Assessment'}
             </h2>
             
             {selectedPersona === 'Plant Manager' && (
@@ -714,6 +838,7 @@ export default function Dashboard() {
             activeKPIId === 'plantPerformance' && plantRollup ? `${plantRollup.plant_performance_pct}%` :
             undefined
           }
+          hideFormula
           onClose={() => setActiveKPIId(null)}
         />
       )}

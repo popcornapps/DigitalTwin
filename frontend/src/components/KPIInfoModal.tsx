@@ -9,10 +9,15 @@ interface KPIInfoModalProps {
   // priority over kpiDefinition.exampleCalculation whenever a batch is selected,
   // so this shows this batch's actual numbers instead of a generic example.
   currentCalculation?: KPIDefinition['exampleCalculation'];
+  // Plant Manager dashboard cards are plant-wide rollups (averages/sums
+  // across every batch), not a standard per-batch KPI formula someone would
+  // need to audit - hidden there to avoid implying it's an industry-standard
+  // calculation. Batch Explorer/Golden Batch still show it.
+  hideFormula?: boolean;
   onClose: () => void;
 }
 
-export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, onClose }: KPIInfoModalProps) {
+export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, hideFormula, onClose }: KPIInfoModalProps) {
   const getCategoryColor = (category: KPIDefinition['category']) => {
     switch (category) {
       case 'efficiency': return 'text-indigo-600 bg-indigo-50 border-indigo-200';
@@ -61,10 +66,12 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
           <p className="text-gray-700 leading-relaxed">{kpiDefinition.definition}</p>
 
           {/* 2. Formula */}
-          <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-            <h3 className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-1.5">Formula</h3>
-            <code className="text-sm font-mono font-semibold text-indigo-900 block">{kpiDefinition.formula}</code>
-          </div>
+          {!hideFormula && (
+            <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+              <h3 className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-1.5">Formula</h3>
+              <code className="text-sm font-mono font-semibold text-indigo-900 block">{kpiDefinition.formula}</code>
+            </div>
+          )}
 
           {/* 3. Current Batch Calculation (falls back to a generic example if no batch is selected) */}
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">

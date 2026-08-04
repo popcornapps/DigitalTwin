@@ -56,31 +56,6 @@ export interface BatchSummary {
   valid_time_range: ValidTimeRange;
 }
 
-export interface ParameterPrediction {
-  key: string;
-  label: string;
-  unit: string;
-  applicable: boolean;
-  current: number;
-  predicted: number | null;
-  ci_low: number | null;
-  ci_high: number | null;
-  lower_limit: number;
-  upper_limit: number;
-  alert_level: 'Normal' | 'Warning' | 'Critical' | 'Not Applicable';
-  actual: number | null;
-  actual_alert_level: 'Normal' | 'Warning' | 'Critical' | null;
-  error: number | null;
-  correctness: 'Correct catch' | 'Correct quiet' | 'Missed' | 'False alarm' | null;
-}
-
-export interface PredictionResponse {
-  batch_id: string;
-  elapsed_minutes: number;
-  horizon_minutes: number;
-  parameters: ParameterPrediction[];
-}
-
 export interface TimelinePoint {
   elapsed_minutes: number;
   temperature: number;
@@ -136,6 +111,25 @@ export interface PlantKpiRollup {
   quality_score_pct: number;
   process_stability_pct: number;
   plant_performance_pct: number;
+  total_energy_consumption_kwh: number;
+}
+
+export type PlantPeriodGroupBy = 'shift' | 'day' | 'month';
+
+export interface PlantPeriodKpi {
+  plant: string;
+  group_by: PlantPeriodGroupBy;
+  period_label: string;
+  period_start: string;
+  batch_count: number;
+  energy_consumption_kwh: number;
+  total_production_kg: number;
+}
+
+export interface PlantPeriodKpiList {
+  plant: string;
+  group_by: PlantPeriodGroupBy;
+  periods: PlantPeriodKpi[];
 }
 
 export const fetchBatches = (scope: 'test' | 'all' = 'test'): Promise<BatchSummary[]> =>
@@ -166,9 +160,6 @@ export interface GoldenEnvelopePoint {
 
 export const fetchGoldenEnvelope = (): Promise<GoldenEnvelopePoint[]> => fetchJson('/parameters/envelope');
 
-export const fetchPrediction = (batchId: string, at: number): Promise<PredictionResponse> =>
-  fetchJson(`/batches/${encodeURIComponent(batchId)}/predict?at=${at}`);
-
 export const fetchBatchKPIs = (batchId: string): Promise<BatchKPIs> =>
   fetchJson(`/batch-kpis/${encodeURIComponent(batchId)}`);
 
@@ -176,6 +167,15 @@ export const fetchAllBatchKPIs = (): Promise<BatchKPIs[]> => fetchJson('/batch-k
 
 export const fetchPlantKpiRollup = (plant: string): Promise<PlantKpiRollup> =>
   fetchJson(`/batch-kpis/rollup?plant=${encodeURIComponent(plant)}`);
+
+export const fetchPlantPeriodKpis = (plant: string, groupBy: PlantPeriodGroupBy): Promise<PlantPeriodKpiList> =>
+  fetchJson(`/batch-kpis/plant-period-kpis?plant=${encodeURIComponent(plant)}&group_by=${groupBy}`);
+
+// Resolves the REAL current shift/day/month (server clock) - zero-valued if
+// nothing has completed in that exact period yet, rather than falling back
+// to whichever period happens to be latest in the data.
+export const fetchPlantCurrentPeriodKpi = (plant: string, groupBy: PlantPeriodGroupBy): Promise<PlantPeriodKpi> =>
+  fetchJson(`/batch-kpis/plant-current-period-kpi?plant=${encodeURIComponent(plant)}&group_by=${groupBy}`);
 
 export const GOLDEN_BATCH_ID = 'PAR-GOLDEN';
 
@@ -308,6 +308,8 @@ export interface DeviationAlert {
   // resolve an alert nobody ever reviewed.
   human_decision: 'Acknowledged' | 'Rejected' | null;
   human_decision_at: string | null;
+  // Which agent produced this alert.
+  source: 'process_parameter' | 'kpi_prediction';
 }
 
 export const fetchAlerts = (status?: 'Open' | 'Resolved'): Promise<DeviationAlert[]> =>

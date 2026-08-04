@@ -32,9 +32,10 @@ function earliestOf(...dates: (string | null)[]): string | null {
   return valid.reduce((min, d) => (new Date(d).getTime() < new Date(min).getTime() ? d : min));
 }
 
-// Real Process Parameter Deviation Agent alerts, shaped to fit this page's
-// card/table/modal - this is the ONLY source of recommendations on this page
-// now (no mock data mixed in). The narrative fields (alert_summary/
+// Real alerts from either the Process Parameter Deviation Agent or the KPI
+// Prediction Agent (alert.source), shaped to fit this page's card/table/modal
+// - this is the ONLY source of recommendations on this page now (no mock data
+// mixed in). The narrative fields (alert_summary/
 // trigger_explanation/likely_root_cause/recommended_action/
 // operational_impact) are the LLM reasoning layer's output, persisted on the
 // alert record itself - the same explanation shown in Process Monitoring,
@@ -52,7 +53,7 @@ function alertToRecommendation(alert: DeviationAlert): AIRecommendation {
     : 'New';
   return {
     id: alert.alert_id,
-    source: 'Process Parameter Deviation Agent',
+    source: alert.source === 'kpi_prediction' ? 'KPI Prediction Agent' : 'Process Parameter Deviation Agent',
     batchId: alert.running_batch_id,
     timestamp: new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     createdDate: alert.created_at,
