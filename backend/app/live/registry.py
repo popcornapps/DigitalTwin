@@ -19,6 +19,18 @@ class RunningBatchRegistry:
         self._plant_seq: dict[str, int] = {}
 
     def create(self, plant: str, scenario_profile: str, drifting_parameter: str | None) -> RunningBatch:
+        # Counts every status (Running + Completed + Stopped) for today, not
+        # just currently-active batches - see config.MAX_BATCHES_PER_PLANT_PER_DAY.
+        today = datetime.now(timezone.utc).date()
+        created_today = sum(
+            1 for b in self._batches.values() if b.plant == plant and b.started_at.date() == today
+        )
+        if created_today >= config.MAX_BATCHES_PER_PLANT_PER_DAY:
+            raise ValueError(
+                f"Daily batch limit ({config.MAX_BATCHES_PER_PLANT_PER_DAY}) reached for '{plant}' - "
+                'delete a completed/stopped batch or try again tomorrow.'
+            )
+
         if scenario_profile != 'Normal' and drifting_parameter is None:
             drifting_parameter = config.DEFAULT_DRIFTING_PARAMETER
 
@@ -52,7 +64,8 @@ class RunningBatchRegistry:
         batch.elapsed_minutes = t
         self._history[batch.running_batch_id].append(reading)
 
-    def tick_all(self) -> None:
+    def tick_all(self) -> list[str]:
+        newly_completed: list[str] = []
         for batch in list(self._batches.values()):
             if batch.status != 'Running':
                 continue
@@ -61,8 +74,10 @@ class RunningBatchRegistry:
             if next_t >= batch.target_duration_minutes:
                 self._append_reading(batch, simulator, batch.target_duration_minutes)
                 batch.status = 'Completed'
+                newly_completed.append(batch.running_batch_id)
             else:
                 self._append_reading(batch, simulator, next_t)
+        return newly_completed
 
     def list_batches(self) -> list[RunningBatch]:
         return list(self._batches.values())
@@ -78,6 +93,14 @@ class RunningBatchRegistry:
         if batch is not None and batch.status == 'Running':
             batch.status = 'Stopped'
         return batch
+
+    def remove(self, running_batch_id: str) -> None:
+        # _plant_seq is deliberately NOT touched - the per-plant counter must
+        # keep monotonically increasing even after a batch is deleted, so a
+        # newly created batch never reuses a deleted one's running_batch_id.
+        self._batches.pop(running_batch_id, None)
+        self._simulators.pop(running_batch_id, None)
+        self._history.pop(running_batch_id, None)
 
 
 running_batch_registry = RunningBatchRegistry()

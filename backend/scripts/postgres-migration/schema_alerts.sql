@@ -18,6 +18,13 @@ CREATE TABLE alerts (
     running_batch_id                      text NOT NULL,  -- no FK: running batches are in-memory/ephemeral by design
     plant                                 text NOT NULL,
     parameter                             text NOT NULL,
+    -- Which agent produced this alert. 'process_parameter' rows use
+    -- `parameter` for one of the 4 process parameter keys (temperature,
+    -- process_pressure, flow_rate, agitator_rpm); 'kpi_prediction' rows
+    -- reuse the same column for one of the 5 KPI keys (yield_pct,
+    -- quality_score_pct, sec_kwh_per_kg, oee_pct, total_energy_kwh) - no
+    -- key-space collision between the two, so one column safely serves both.
+    source                                text NOT NULL DEFAULT 'process_parameter' CHECK (source IN ('process_parameter', 'kpi_prediction')),
     trigger_type                          text NOT NULL CHECK (trigger_type IN ('current', 'predicted', 'both')),
     severity                              text NOT NULL CHECK (severity IN ('Warning', 'Critical')),
     detected_at_elapsed_minutes           integer NOT NULL,

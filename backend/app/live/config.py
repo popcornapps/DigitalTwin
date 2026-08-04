@@ -127,6 +127,15 @@ NOISE_STD = {
 # each tick (in 1-sim-minute step units) - keeps noise bounded without drift.
 NOISE_REVERSION_RATE = 0.15
 
+# Daily cap on how many batches can be created per plant - counts EVERY
+# status (Running + Completed + Stopped), not just currently-active ones, so
+# creating and immediately stopping a batch still consumes a slot (each
+# created batch already used real materials/equipment time, regardless of
+# whether it was later aborted early). Resets with the in-memory registry
+# (i.e. on process restart), same caveat as the rest of this ephemeral
+# subsystem - see registry.py's own docstring.
+MAX_BATCHES_PER_PLANT_PER_DAY = 8
+
 # Default seed batches created once at backend startup - all at the single
 # supported plant (see PLANTS above); the three scenario profiles still vary.
 DEFAULT_SEED_BATCHES = [

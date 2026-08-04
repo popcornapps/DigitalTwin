@@ -71,7 +71,7 @@ ALERT_COLUMNS = [
     'alert_summary', 'trigger_explanation', 'urgency', 'operational_impact',
     'root_cause_confidence_pct', 'root_cause_confidence_level', 'root_cause_confidence_explanation',
     'recommendation_confidence_pct', 'recommendation_confidence_level', 'recommendation_confidence_explanation',
-    'reasoning_source', 'human_decision', 'human_decision_at', 'reasoning_fingerprint',
+    'reasoning_source', 'human_decision', 'human_decision_at', 'reasoning_fingerprint', 'source',
 ]
 
 
@@ -245,6 +245,72 @@ class AlertRegistry:
             recommendation_confidence_explanation=assessment.recommendation_confidence_explanation,
         )
         self._apply_reasoning(alert, assessment, reasoning, fingerprint)
+        self._insert(alert)
+
+    async def sync_from_kpi_prediction(self, batch: RunningBatch, kpi_calc: dict) -> None:
+        """Same create/update/resolve pattern as sync_from_assessment, but for
+        one KPI's prediction (kpi_calc, one entry from predict_kpis()'s
+        `kpis` list) rather than one process parameter's assessment. Simpler
+        than that method: predict_kpis() already caches its own LLM reasoning
+        internally (keyed by (running_batch_id, kpi_key) + a status/top-
+        contributor fingerprint - see kpi_prediction_agent.py's
+        _reasoning_cache), so by the time kpi_calc reaches here its narrative
+        fields are already stable - no second fingerprint-gating layer is
+        needed here, just write whatever's currently in kpi_calc."""
+        existing = self._find_open(batch.running_batch_id, kpi_calc['key'])
+
+        if kpi_calc['status'] == 'normal':
+            if existing is not None:
+                existing.status = 'Resolved'
+                existing.resolved_at_elapsed_minutes = batch.elapsed_minutes
+                existing.resolved_at = datetime.now(timezone.utc)
+                self._update(existing)
+            return
+
+        severity = kpi_calc['status'].title()  # 'warning'/'critical' -> 'Warning'/'Critical'
+        contributors = kpi_calc.get('contributing_parameters') or []
+        likely_root_cause = (
+            f"Primarily driven by {contributors[0]['label']} deviation from golden reference."
+            if contributors else None
+        )
+
+        if existing is not None:
+            existing.severity = severity
+            existing.observation = kpi_calc['deviation_explanation']
+            existing.confidence = kpi_calc['confidence']
+            existing.likely_root_cause = likely_root_cause
+            existing.recommended_action = kpi_calc['recommended_action']
+            existing.alert_summary = kpi_calc['kpi_summary']
+            existing.trigger_explanation = kpi_calc['deviation_explanation']
+            existing.urgency = kpi_calc['urgency']
+            existing.operational_impact = kpi_calc['operational_impact']
+            existing.reasoning_source = kpi_calc['reasoning_source']
+            self._update(existing)
+            return
+
+        alert = DeviationAlert(
+            alert_id=self._next_id(),
+            running_batch_id=batch.running_batch_id,
+            plant=batch.plant,
+            parameter=kpi_calc['key'],
+            trigger_type='predicted',
+            severity=severity,
+            detected_at_elapsed_minutes=batch.elapsed_minutes,
+            created_at=datetime.now(timezone.utc),
+            observation=kpi_calc['deviation_explanation'],
+            predicted_observation=None,
+            time_to_breach_minutes=None,
+            confidence=kpi_calc['confidence'],
+            likely_root_cause=likely_root_cause,
+            recommended_action=kpi_calc['recommended_action'],
+            status='Open',
+            alert_summary=kpi_calc['kpi_summary'],
+            trigger_explanation=kpi_calc['deviation_explanation'],
+            urgency=kpi_calc['urgency'],
+            operational_impact=kpi_calc['operational_impact'],
+            reasoning_source=kpi_calc['reasoning_source'],
+            source='kpi_prediction',
+        )
         self._insert(alert)
 
     @staticmethod

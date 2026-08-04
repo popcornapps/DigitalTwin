@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import PARAMETER_LABELS
 from app.live.alert_registry import alert_registry
+from app.live.kpi_prediction_agent import KPI_LABELS
 from app.live.models import DeviationAlert
 from app.schemas.alert import DeviationAlertOut
 
@@ -14,7 +15,12 @@ def _to_out(alert: DeviationAlert) -> DeviationAlertOut:
         running_batch_id=alert.running_batch_id,
         plant=alert.plant,
         parameter=alert.parameter,
-        parameter_label=PARAMETER_LABELS[alert.parameter],
+        # `parameter` holds a process-parameter key for 'process_parameter'
+        # alerts, or a KPI key for 'kpi_prediction' alerts (see
+        # models.DeviationAlert.source) - check both label dicts rather than
+        # assuming process-parameter-only, or a KPI alert's label lookup
+        # would KeyError and 500 this entire list endpoint.
+        parameter_label=PARAMETER_LABELS.get(alert.parameter) or KPI_LABELS.get(alert.parameter, alert.parameter),
         trigger_type=alert.trigger_type,
         severity=alert.severity,
         detected_at_elapsed_minutes=alert.detected_at_elapsed_minutes,
@@ -41,6 +47,7 @@ def _to_out(alert: DeviationAlert) -> DeviationAlertOut:
         reasoning_source=alert.reasoning_source,
         human_decision=alert.human_decision,
         human_decision_at=alert.human_decision_at,
+        source=alert.source,
     )
 
 

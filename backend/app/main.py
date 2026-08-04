@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import CORS_ORIGINS
 from app.live import scheduler as live_scheduler
 from app.live import service as live_service
-from app.routers import alerts, batch_kpis, batches, kpi_prediction, live_batches, parameters, predictions, settings
+from app.routers import alerts, batch_kpis, batches, kpi_prediction, live_batches, parameters, settings
 from app.state import app_state
 
 
@@ -33,12 +33,14 @@ app.add_middleware(
     # CORS preflight, unlike the existing no-body POSTs (acknowledge/reject/
     # stop) which qualify as "simple requests" and skip preflight entirely -
     # 'GET' alone let those slip through unnoticed until this one needed it.
-    allow_methods=['GET', 'POST'],
+    # 'DELETE' added for DELETE /api/live-batches/{id} - without it the
+    # browser blocks the request at the CORS preflight, even though curl
+    # (which doesn't enforce CORS) calls it fine.
+    allow_methods=['GET', 'POST', 'DELETE'],
     allow_headers=['*'],
 )
 
 app.include_router(batches.router)
-app.include_router(predictions.router)
 app.include_router(parameters.router)
 app.include_router(batch_kpis.router)
 app.include_router(live_batches.router)

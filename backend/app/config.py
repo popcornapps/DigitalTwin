@@ -50,3 +50,24 @@ PARAMETER_UNITS = {
     'flow_rate': 'L/min',
     'agitator_rpm': 'RPM',
 }
+
+# Plant-manager KPI aggregation: shift/day/month rollups over historical
+# batches (data_service.get_plant_period_kpis). Two fixed 12-hour shifts; a
+# batch is attributed to a shift/day/month bucket solely by its
+# batch_start_datetime - never split, even if batch_duration_minutes runs
+# past a boundary. Hour boundaries below are in the PLANT's local time
+# (IST) - batch_start_datetime is stored/parsed as UTC (real for live
+# batches via datetime.now(timezone.utc)) and must be shifted by
+# PLANT_TIMEZONE_UTC_OFFSET_MINUTES before these hour checks are applied,
+# or "Current Shift" drifts against the plant's actual wall clock.
+DAY_SHIFT_START_HOUR = 6     # 06:00 IST - Day Shift starts
+NIGHT_SHIFT_START_HOUR = 18  # 18:00 IST - Night Shift starts, crosses midnight
+DAY_SHIFT_LABEL = 'Day Shift'
+NIGHT_SHIFT_LABEL = 'Night Shift'
+PLANT_PERIOD_GROUP_BY_VALUES = ('shift', 'day', 'month')
+
+# Hyderabad Plant runs on IST (UTC+5:30) - applied only to the shift/day/
+# month bucketing math (get_plant_period_kpis/_current_bucket below);
+# batch_start_datetime itself stays stored as real UTC (a timestamptz
+# column), only the bucketing conversion happens at read time.
+PLANT_TIMEZONE_UTC_OFFSET_MINUTES = 330

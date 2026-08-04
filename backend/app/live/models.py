@@ -90,6 +90,12 @@ class RunningBatch:
     # One entry per parameter, overwritten each tick - the Deviation Agent's
     # current output, same "latest only" convention as latest_prediction.
     latest_assessments: list[ParameterAssessment] = field(default_factory=list)
+    # Wall-clock time this batch's completion was successfully written to
+    # Postgres (app.live.history_writer), or None if never persisted (still
+    # Running/Stopped, or a persist attempt failed) - a debug signal, not a
+    # correctness mechanism (see history_writer.py for why double-persistence
+    # can't happen regardless of this field).
+    persisted_at: datetime | None = None
 
 
 @dataclass
@@ -155,6 +161,12 @@ class DeviationAlert:
     # regenerating (new alert, severity change, or the ranked root-cause
     # candidates changed) - not serialized to the API.
     reasoning_fingerprint: tuple | None = field(default=None, repr=False)
+    # Which agent produced this alert - 'process_parameter' (the Process
+    # Parameter Deviation Agent, `parameter` holds one of the 4 process
+    # parameter keys) or 'kpi_prediction' (the KPI Prediction Agent,
+    # `parameter` reuses the same column for one of the 5 KPI keys - no
+    # collision between the two key spaces).
+    source: str = 'process_parameter'
 
 
 @dataclass

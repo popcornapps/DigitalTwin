@@ -23,15 +23,3 @@ def classify_actual(actual: float, lo: float, hi: float) -> str:
     if actual < lo + margin or actual > hi - margin:
         return 'Warning'
     return 'Normal'
-
-
-def correctness(predicted_alert: str, actual_alert: str) -> str:
-    predicted_flagged = predicted_alert in ('Warning', 'Critical')
-    actual_deviated = actual_alert in ('Warning', 'Critical')
-    if predicted_flagged and actual_deviated:
-        return 'Correct catch'
-    if not predicted_flagged and not actual_deviated:
-        return 'Correct quiet'
-    if not predicted_flagged and actual_deviated:
-        return 'Missed'
-    return 'False alarm'

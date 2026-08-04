@@ -3,9 +3,10 @@ import from `app.live`. Thin wrapper over the registry; keeps the registry's
 internal storage details out of the router layer, matching the existing
 services/ pattern used for the historical plane.
 """
-from app.live import config
+from app.live import config, history_writer
 from app.live.models import RunningBatch, TelemetryReading
 from app.live.registry import running_batch_registry
+from app.state import AppState
 
 
 def create_running_batch(plant: str, scenario_profile: str = 'Normal', drifting_parameter: str | None = None) -> RunningBatch:
@@ -35,6 +36,22 @@ def get_latest_reading(running_batch_id: str) -> TelemetryReading | None:
 
 def stop_running_batch(running_batch_id: str) -> RunningBatch | None:
     return running_batch_registry.stop(running_batch_id)
+
+
+def delete_running_batch(running_batch_id: str, app_state: AppState) -> str:
+    """Returns 'not_found' | 'still_running' | 'deleted'. Cascades: if the
+    batch was ever persisted to history (naturally Completed), its Postgres
+    batches/batch_kpis rows and in-memory AppState rows are deleted too, not
+    just the in-memory live-batch entry - a no-op if it was never persisted
+    (e.g. Stopped batches)."""
+    batch = running_batch_registry.get(running_batch_id)
+    if batch is None:
+        return 'not_found'
+    if batch.status == 'Running':
+        return 'still_running'
+    history_writer.delete_persisted_batch(batch, app_state)
+    running_batch_registry.remove(running_batch_id)
+    return 'deleted'
 
 
 def get_recent_readings(running_batch_id: str, lookback_minutes: int = 30) -> list[TelemetryReading]:

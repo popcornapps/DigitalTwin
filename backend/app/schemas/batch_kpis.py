@@ -42,3 +42,22 @@ class PlantKpiRollup(BaseModel):
     quality_score_pct: float
     process_stability_pct: float
     plant_performance_pct: float
+    # All-time sum of batches.energy_kwh for this plant - the real primitive
+    # fact, not derived from batch_kpis.total_energy_kwh.
+    total_energy_consumption_kwh: float
+
+
+class PlantPeriodKpi(BaseModel):
+    plant: str
+    group_by: str  # 'shift' | 'day' | 'month'
+    period_label: str  # e.g. "2026-08-04", "2026-08", "2026-08-04 Night Shift"
+    period_start: str  # bucket start, same "...T00:00:00.000Z" string style as batch_start_datetime
+    batch_count: int
+    energy_consumption_kwh: float
+    total_production_kg: float
+
+
+class PlantPeriodKpiList(BaseModel):
+    plant: str
+    group_by: str
+    periods: list[PlantPeriodKpi]

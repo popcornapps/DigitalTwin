@@ -43,3 +43,5 @@ class DeviationAlertOut(BaseModel):
     # The human's decision - separate from `status` (see models.DeviationAlert).
     human_decision: str | None = None  # 'Acknowledged' | 'Rejected' | None
     human_decision_at: datetime | None = None
+    # Which agent produced this alert - 'process_parameter' or 'kpi_prediction'.
+    source: str = 'process_parameter'

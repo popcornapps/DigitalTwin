@@ -11,6 +11,7 @@ from app.schemas.live_batch import (
     RunningBatchTelemetryResponse,
     TelemetryReadingOut,
 )
+from app.state import app_state
 
 router = APIRouter(prefix='/api/live-batches', tags=['live-batches'])
 
@@ -32,7 +33,10 @@ def _to_summary(batch: RunningBatch) -> RunningBatchSummary:
 
 @router.post('', response_model=RunningBatchSummary)
 def create_batch(req: CreateRunningBatchRequest):
-    batch = service.create_running_batch(req.plant, req.scenario_profile, req.drifting_parameter)
+    try:
+        batch = service.create_running_batch(req.plant, req.scenario_profile, req.drifting_parameter)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return _to_summary(batch)
 
 
@@ -121,3 +125,15 @@ def stop_batch(running_batch_id: str):
     if batch is None:
         raise HTTPException(status_code=404, detail=f"'{running_batch_id}' is not a known running batch")
     return _to_summary(batch)
+
+
+@router.delete('/{running_batch_id}', response_model=RunningBatchSummary)
+def delete_batch(running_batch_id: str):
+    batch = service.get_running_batch(running_batch_id)  # fetch before removal, for the response body
+    if batch is None:
+        raise HTTPException(status_code=404, detail=f"'{running_batch_id}' is not a known running batch")
+    summary = _to_summary(batch)
+    result = service.delete_running_batch(running_batch_id, app_state)
+    if result == 'still_running':
+        raise HTTPException(status_code=400, detail=f"'{running_batch_id}' is still Running - stop it before deleting")
+    return summary

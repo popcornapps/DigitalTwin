@@ -4,5 +4,5 @@
 __pycache__/
 *.pyc
 data/live_alerts_store.json
-models/*.joblib
+backend/models/*.joblib
 .DS_Store
