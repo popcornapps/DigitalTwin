@@ -84,8 +84,10 @@ SPEED_PROFILES = {
 }
 
 # Selected via the LIVE_BATCH_SPEED_PROFILE env var so this can be switched
-# without a code change (e.g. `LIVE_BATCH_SPEED_PROFILE=accelerated uvicorn
-# ...`) - defaults to 'demo' per the current product decision.
+# without a code change - defaults to 'demo' (6 sec/sim-minute). Run
+# `LIVE_BATCH_SPEED_PROFILE=accelerated uvicorn ...` (2 sec/sim-minute,
+# batches finish in ~13 real minutes instead of ~39) whenever faster
+# testing is actually wanted, instead of changing this default back and forth.
 ACTIVE_SPEED_PROFILE = os.environ.get('LIVE_BATCH_SPEED_PROFILE', 'demo')
 if ACTIVE_SPEED_PROFILE not in SPEED_PROFILES:
     raise ValueError(

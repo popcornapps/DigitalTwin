@@ -28,6 +28,7 @@ def _to_summary(batch: RunningBatch) -> RunningBatchSummary:
         started_at=batch.started_at,
         elapsed_minutes=batch.elapsed_minutes,
         target_duration_minutes=batch.target_duration_minutes,
+        history_batch_id=batch.history_batch_id,
     )
 
 

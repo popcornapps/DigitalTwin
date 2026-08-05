@@ -106,6 +106,17 @@ def _build_batch_kpis(state: AppState, batch_id: str) -> BatchKPIs:
         total_energy_kwh=float(row['total_energy_kwh']),
         sec_kwh_per_kg=float(row['sec_kwh_per_kg']),
         generation_method_version=str(row['generation_method_version']),
+        predicted_yield_pct=None if pd.isna(row['predicted_yield_pct']) else float(row['predicted_yield_pct']),
+        predicted_quality_score_pct=(
+            None if pd.isna(row['predicted_quality_score_pct']) else float(row['predicted_quality_score_pct'])
+        ),
+        predicted_sec_kwh_per_kg=(
+            None if pd.isna(row['predicted_sec_kwh_per_kg']) else float(row['predicted_sec_kwh_per_kg'])
+        ),
+        predicted_oee_pct=None if pd.isna(row['predicted_oee_pct']) else float(row['predicted_oee_pct']),
+        predicted_total_energy_kwh=(
+            None if pd.isna(row['predicted_total_energy_kwh']) else float(row['predicted_total_energy_kwh'])
+        ),
     )
 
 

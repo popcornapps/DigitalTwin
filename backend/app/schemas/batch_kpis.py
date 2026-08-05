@@ -33,6 +33,15 @@ class BatchKPIs(BaseModel):
     # docs/batch-kpis-prediction-readiness-review.md for the full provenance
     # breakdown of every field above (real/derived/semi-derived/synthetic).
     generation_method_version: str
+    # The ML KPI Prediction Agent's last-tick guess, captured at completion
+    # time purely for comparison against the real values above (see
+    # app.live.history_writer) - None for the 120 historical batches, which
+    # never ran through the live simulator and so were never predicted.
+    predicted_yield_pct: float | None = None
+    predicted_quality_score_pct: float | None = None
+    predicted_sec_kwh_per_kg: float | None = None
+    predicted_oee_pct: float | None = None
+    predicted_total_energy_kwh: float | None = None
 
 
 class PlantKpiRollup(BaseModel):

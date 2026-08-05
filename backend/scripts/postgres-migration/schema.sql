@@ -127,7 +127,16 @@ CREATE TABLE batch_kpis (
     oee_pct                                             double precision NOT NULL,
     total_energy_kwh                                    double precision NOT NULL,
     sec_kwh_per_kg                                       double precision NOT NULL,
-    generation_method_version                            text NOT NULL
+    generation_method_version                            text NOT NULL,
+    -- ML KPI Prediction Agent's last live guess, captured at completion time
+    -- for comparison against the real values above (app.live.history_writer)
+    -- - NULL for the 120 historical batches, which never ran through the
+    -- live simulator and so were never predicted.
+    predicted_yield_pct                                 double precision,
+    predicted_quality_score_pct                          double precision,
+    predicted_sec_kwh_per_kg                             double precision,
+    predicted_oee_pct                                    double precision,
+    predicted_total_energy_kwh                           double precision
 );
 
 CREATE TABLE synthetic_kpi_training_dataset (

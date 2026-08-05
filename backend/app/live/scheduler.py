@@ -14,7 +14,7 @@ async def _tick_loop() -> None:
         for running_batch_id in newly_completed:
             batch = running_batch_registry.get(running_batch_id)
             try:
-                history_writer.persist_completed_batch(batch, app_state)
+                await history_writer.persist_completed_batch(batch, app_state)
             except Exception:
                 # batch.persisted_at stays None; status stays 'Completed'; no
                 # retry - simple is fine for this demo/synthetic system, just

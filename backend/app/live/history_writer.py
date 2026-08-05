@@ -11,6 +11,19 @@ feature, called from app.live.scheduler (which already imports across
 layers), same bridging role app.live.golden_reference already plays for
 reads.
 
+Final KPIs (yield/quality/SEC/OEE/energy) are computed the SAME real,
+deterministic way scripts/generate-batch-kpis/generate_batch_kpis.py computed
+them for the 120 historical batches - real Stability from the batch's own
+complete telemetry, flowing through the same Yield/Energy/Assay/OEE formula
+chain - not the KPI Prediction Agent's ML guess (that model is weak, test R²
+only ~0.23-0.4, and was previously used as if its guess were the real
+outcome). The ML model's own last-tick prediction is still captured
+separately, into predicted_* columns, purely for comparison against the real
+value - it no longer drives what gets recorded. The constants/functions below
+are ported from generate_batch_kpis.py, kept in sync by hand (same "ported,
+not imported" convention as app/live/simulator.py vs scripts/generate-dataset)
+since scripts/ isn't importable from app/.
+
 Summary only: writes to batches + batch_kpis, not batch_timeseries - a
 persisted live batch won't have a Batch Explorer timeline chart yet.
 Manually-Stopped batches are never persisted here at all (see scheduler.py -
@@ -18,46 +31,131 @@ this module is only ever called for batches that reach 'Completed'
 naturally); their partial energy/output would misrepresent a finished
 production run.
 """
+import asyncio
+import hashlib
+import math
 from datetime import datetime
 
 import pandas as pd
 
+from app import config
 from app.db import get_connection
+from app.live import config as live_config
+from app.live import golden_reference
 from app.live.models import RunningBatch
 from app.state import AppState
 
-GENERATION_METHOD_VERSION = 'live_completion_v1'
-
-# Midpoint of generate_batch_kpis.py's OEE_PERFORMANCE_RANGES per severity
-# tier - no live throughput/speed signal exists to derive this properly (same
-# gap the historical generator itself has, which uses a seeded random draw
-# instead). A fixed per-tier midpoint keeps this deterministic/reproducible
-# rather than introducing seeded-randomness machinery into the live path.
-OEE_PERFORMANCE_MIDPOINT = {'Normal': 94.0, 'Warning': 87.0, 'Critical': 81.5}
+GENERATION_METHOD_VERSION = 'live_completion_v2'
 
 ASSAY_FLOOR_PCT = 90.0
 ASSAY_CEILING_PCT = 101.0
-QUALITY_SCORE_NORMALIZATION_SPAN = 10.0  # matches generate_batch_kpis.py
+QUALITY_SCORE_NORMALIZATION_SPAN = 10.0
 
-_assay_target_cache: float | None = None
+# --- Ported from generate_batch_kpis.py - see module docstring. ---
+BASE_ENERGY_KWH = 180.0
+ENERGY_PER_MINUTE_KWH = 0.16
+ENERGY_NOISE_STD_KWH = 3.0
+ENERGY_INSTABILITY_COEFF = 0.5
+YIELD_LOSS_COEFF = 0.35
+YIELD_LOSS_NOISE_STD = 0.01
+YIELD_FRACTION_FLOOR = 0.85
+ASSAY_STABILITY_COEFF = 2.0
+ASSAY_NOISE_STD = 0.3
+OEE_PERFORMANCE_RANGES = {'Normal': (90.0, 98.0), 'Warning': (82.0, 92.0), 'Critical': (75.0, 88.0)}
 
 
-def _assay_target(app_state: AppState) -> float:
-    global _assay_target_cache
-    if _assay_target_cache is None:
+def seeded_unit_interval(seed: str) -> float:
+    digest = hashlib.sha256(seed.encode()).digest()
+    return int.from_bytes(digest[:8], 'big') / 2**64
+
+
+def seeded_range(seed: str, lo: float, hi: float) -> float:
+    return lo + seeded_unit_interval(seed) * (hi - lo)
+
+
+def seeded_gaussian(seed: str, mean: float, std: float) -> float:
+    u1 = max(seeded_unit_interval(seed + '_u1'), 1e-9)
+    u2 = seeded_unit_interval(seed + '_u2')
+    z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+    return mean + z * std
+
+
+def _clamp(lo: float, hi: float, x: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def _valid_time_range(target_duration_minutes: int) -> tuple[int, int]:
+    # Same formula as app.state.AppState.valid_time_range/generate_batch_kpis.py's
+    # own local version - neither can be reused directly, since no batches_df
+    # row exists yet for a batch mid-persist.
+    return (
+        config.DRYING_WINDOW_START_MINUTES,
+        target_duration_minutes - config.DRYING_WINDOW_END_BUFFER_MINUTES - config.HORIZON_MINUTES,
+    )
+
+
+def compute_stability(window: pd.DataFrame, parameter_limits: dict) -> dict:
+    fractions = {}
+    for param in config.DRYING_PARAMETER_KEYS:
+        lower, upper = parameter_limits[param]
+        values = window[param]
+        fractions[param] = 100.0 * float(((values >= lower) & (values <= upper)).mean()) if len(values) else 0.0
+    return fractions
+
+
+def compute_similarity(window: pd.DataFrame, golden_window: pd.DataFrame, parameter_limits: dict) -> dict:
+    merged = window.merge(golden_window, on='elapsed_minutes', suffixes=('', '_golden'))
+    similarities = {}
+    for param in config.DRYING_PARAMETER_KEYS:
+        lower, upper = parameter_limits[param]
+        band = upper - lower
+        if merged.empty:
+            similarities[param] = 0.0
+            continue
+        mean_abs_diff = float((merged[param] - merged[f'{param}_golden']).abs().mean())
+        similarities[param] = 100.0 * (1.0 - min(1.0, mean_abs_diff / band))
+    return similarities
+
+
+def find_fault_onset(window: pd.DataFrame, parameter_limits: dict) -> float | None:
+    ordered = window.sort_values('elapsed_minutes')
+    for row in ordered.itertuples():
+        for param in config.DRYING_PARAMETER_KEYS:
+            lower, upper = parameter_limits[param]
+            if not (lower <= getattr(row, param) <= upper):
+                return float(row.elapsed_minutes)
+    return None
+
+
+_assay_spec_cache: tuple[float, float] | None = None  # (target, upper_limit)
+
+
+def _assay_spec() -> tuple[float, float]:
+    global _assay_spec_cache
+    if _assay_spec_cache is None:
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT golden_target FROM parameters WHERE parameter = 'Assay'")
-            _assay_target_cache = float(cur.fetchone()[0])
-    return _assay_target_cache
+            cur.execute("SELECT golden_target, upper_limit FROM parameters WHERE parameter = 'Assay'")
+            target, upper = cur.fetchone()
+            _assay_spec_cache = (float(target), float(upper))
+    return _assay_spec_cache
 
 
-def history_batch_id_for(batch: RunningBatch) -> str:
-    # running_batch_id alone isn't safe: its per-plant sequence counter
-    # (registry._plant_seq) resets to 0 on every process restart, so
-    # "RUN-HYD-001" gets reissued to a brand-new batch after a restart and
-    # would collide with a prior life's already-persisted row. started_at is
-    # unique per instance even across restarts.
-    return f'{batch.running_batch_id}-{int(batch.started_at.timestamp())}'
+def _next_par_id(app_state: AppState) -> str:
+    """Continues the same PAR-XXX numbering the historical batches already
+    use (e.g. after PAR-119, the next persisted live batch becomes PAR-120)
+    - so a completed live batch blends into Batch Explorer's existing list
+    instead of looking like a different naming scheme. Computed from the
+    in-memory batches_df (already the single source of truth, kept in sync
+    with Postgres by _append_to_app_state below), not a separate query -
+    safe even if several batches complete in the same tick, since scheduler.py
+    awaits persist_completed_batch for each one sequentially, not concurrently."""
+    numeric_suffixes = [
+        int(bid.split('-')[1])
+        for bid in app_state.batches_df.index
+        if bid.startswith('PAR-') and bid.split('-')[1].isdigit()
+    ]
+    next_num = (max(numeric_suffixes) + 1) if numeric_suffixes else 1
+    return f'PAR-{next_num:03d}'
 
 
 def _deviation_fields(batch: RunningBatch) -> tuple[str, str]:
@@ -70,101 +168,119 @@ def _deviation_fields(batch: RunningBatch) -> tuple[str, str]:
     return f'Live_{batch.drifting_parameter}', batch.scenario_profile
 
 
-def _derive_assay_pct(quality_score_pct: float, target: float) -> float:
-    # Inverts generate_batch_kpis.py's quality_score_pct formula:
-    #   quality_score_pct = 100 * (1 - min(1, |assay_pct - target| / 10))
-    # assuming the same always-below-target direction that generator uses.
-    deviation = (1.0 - quality_score_pct / 100.0) * QUALITY_SCORE_NORMALIZATION_SPAN
-    return max(ASSAY_FLOOR_PCT, min(ASSAY_CEILING_PCT, target - deviation))
-
-
-def _severity_tier_defaults(app_state: AppState, deviation_severity: str) -> dict:
-    """process_stability_pct/golden_batch_similarity_pct (+ each's 3
-    per-parameter columns): no live per-minute stability/similarity
-    computation exists for a live batch (would need the discarded
-    TelemetryReading history) - reuses the mean of historical batch_kpis
-    rows sharing the same severity tier as the best available stand-in,
-    rather than inventing a flat constant."""
-    severity_key = None if deviation_severity == 'None' else deviation_severity
-    batches_df = app_state.batches_df
-    if severity_key is None:
-        tier_batch_ids = batches_df.index[batches_df['deviation_severity'].isna()]
-    else:
-        tier_batch_ids = batches_df.index[batches_df['deviation_severity'] == severity_key]
-    tier_kpis = app_state.batch_kpis_df.loc[app_state.batch_kpis_df.index.intersection(tier_batch_ids)]
-    cols = [
-        'process_stability_pct',
-        'process_stability_in_control_pct_temperature',
-        'process_stability_in_control_pct_process_pressure',
-        'process_stability_in_control_pct_flow_rate',
-        'golden_batch_similarity_pct',
-        'golden_batch_similarity_pct_temperature',
-        'golden_batch_similarity_pct_process_pressure',
-        'golden_batch_similarity_pct_flow_rate',
-    ]
-    means = tier_kpis[cols].mean()
-    return {col: round(float(means[col]), 2) for col in cols}
-
-
-def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
-    # Lazy import - kpi_prediction_agent imports app.live.service (for
-    # get_recent_readings), and service.py imports this module (for
-    # delete_persisted_batch) - a module-level import here would close that
-    # loop into a real circular import. By the time this function actually
-    # runs (a batch has been ticking for 300+ minutes), every module is
-    # already fully loaded, so the cycle only matters at import time, not here.
+async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
+    # Lazy imports - kpi_prediction_agent/service both eventually import this
+    # module (service.py imports history_writer for delete_persisted_batch;
+    # kpi_prediction_agent imports service.py for get_recent_readings) - a
+    # module-level import here would close that loop into a real circular
+    # import. By the time this function actually runs (a batch has been
+    # ticking for 300+ minutes), every module is already fully loaded, so the
+    # cycle only matters at import time, not here.
     from app.live.kpi_prediction_agent import predict_kpis
+    from app.live.service import get_telemetry_history
 
-    prediction = predict_kpis(batch.running_batch_id, batch.elapsed_minutes, batch.plant)
-    if prediction is None:
-        # Batches always run 300+ minutes, well past the 30-min feature
-        # window predict_kpis requires - this branch should be unreachable
-        # at natural completion, but guard rather than crash the tick loop.
+    history = get_telemetry_history(batch.running_batch_id)
+    if not history:
+        # Shouldn't happen - telemetry exists from minute 0 - guard rather
+        # than crash the tick loop.
         return
 
-    kpi_by_key = {k['key']: k['predicted_final'] for k in prediction['kpis']}
-    history_batch_id = history_batch_id_for(batch)
-    theoretical_output_kg = float(app_state.batches_df.loc['PAR-GOLDEN', 'theoretical_output_kg'])
-    yield_pct = kpi_by_key['yield_pct']
-    quality_score_pct = kpi_by_key['quality_score_pct']
-    oee_pct = kpi_by_key['oee_pct']
-    total_energy_kwh = kpi_by_key['total_energy_kwh']
-    sec_kwh_per_kg = kpi_by_key['sec_kwh_per_kg']
-    actual_output_kg = theoretical_output_kg * (yield_pct / 100.0)
-    assay_pct = _derive_assay_pct(quality_score_pct, _assay_target(app_state))
-    deviation_scenario, deviation_severity = _deviation_fields(batch)
+    # predict_kpis() spawns/joins its own thread pool for LLM reasoning -
+    # blocking. Run it off the event loop since this function is itself now
+    # awaited from the async tick loop (see scheduler.py).
+    prediction = await asyncio.to_thread(predict_kpis, batch.running_batch_id, batch.elapsed_minutes, batch.plant)
+    predicted_by_key = {k['key']: k['predicted_final'] for k in prediction['kpis']} if prediction else {}
+
+    telemetry_df = pd.DataFrame([
+        {
+            'elapsed_minutes': r.elapsed_minutes,
+            'temperature': r.temperature,
+            'process_pressure': r.process_pressure,
+            'flow_rate': r.flow_rate,
+            'agitator_rpm': r.agitator_rpm,
+        }
+        for r in history
+    ])
+
+    duration = int(batch.target_duration_minutes)
+    min_t, max_t = _valid_time_range(duration)
+    window = telemetry_df[telemetry_df['elapsed_minutes'].between(min_t, max_t)]
+
+    parameter_limits = {
+        key: (cfg['lower_limit'], cfg['upper_limit']) for key, cfg in live_config.get_parameter_config().items()
+    }
 
     golden_duration = int(app_state.batches_df.loc['PAR-GOLDEN', 'batch_duration_minutes'])
-    oee_availability_pct = min(100.0, 100.0 * golden_duration / batch.target_duration_minutes)
-    oee_performance_pct = OEE_PERFORMANCE_MIDPOINT[batch.scenario_profile]
+    golden_min_t, golden_max_t = _valid_time_range(golden_duration)
+    golden_ts = golden_reference.golden_timeseries().reset_index()  # elapsed_minutes back to a column, for the merge
+    golden_window = golden_ts[golden_ts['elapsed_minutes'].between(golden_min_t, golden_max_t)]
+
+    stability = compute_stability(window, parameter_limits)
+    process_stability_pct = sum(stability.values()) / len(stability)
+    stability_frac = process_stability_pct / 100.0
+
+    similarity = compute_similarity(window, golden_window, parameter_limits)
+    golden_batch_similarity_pct = sum(similarity.values()) / len(similarity)
+
+    fault_onset = find_fault_onset(window, parameter_limits)
+
+    history_batch_id = _next_par_id(app_state)
+    theoretical_output_kg = float(app_state.batches_df.loc['PAR-GOLDEN', 'theoretical_output_kg'])
+    assay_target, assay_upper = _assay_spec()
+
+    yield_loss_frac = YIELD_LOSS_COEFF * (1 - stability_frac)
+    yield_fraction = _clamp(YIELD_FRACTION_FLOOR, 1.0, (
+        1.0 - yield_loss_frac + seeded_gaussian(f'{history_batch_id}_yield_fraction', 0, YIELD_LOSS_NOISE_STD)
+    ))
+    actual_output_kg = theoretical_output_kg * yield_fraction
+    yield_pct = 100.0 * yield_fraction
+
+    instability_penalty = ENERGY_INSTABILITY_COEFF * (1 - stability_frac)
+    energy_kwh = (
+        BASE_ENERGY_KWH + ENERGY_PER_MINUTE_KWH * duration * (1 + instability_penalty)
+        + seeded_gaussian(f'{history_batch_id}_energy', 0, ENERGY_NOISE_STD_KWH)
+    )
+    sec_kwh_per_kg = energy_kwh / actual_output_kg
+
+    assay_deviation = ASSAY_STABILITY_COEFF * (1 - stability_frac) * (assay_upper - assay_target)
+    assay_pct = _clamp(ASSAY_FLOOR_PCT, ASSAY_CEILING_PCT, (
+        assay_target - assay_deviation + seeded_gaussian(f'{history_batch_id}_assay', 0, ASSAY_NOISE_STD)
+    ))
+    quality_score_pct = 100.0 * (1 - min(1.0, abs(assay_pct - assay_target) / QUALITY_SCORE_NORMALIZATION_SPAN))
+
+    oee_availability_pct = min(100.0, 100.0 * golden_duration / duration)
+    perf_lo, perf_hi = OEE_PERFORMANCE_RANGES[batch.scenario_profile]
+    oee_performance_pct = seeded_range(f'{history_batch_id}_oee_performance', perf_lo, perf_hi)
     oee_quality_pct = quality_score_pct
-    stability_defaults = _severity_tier_defaults(app_state, deviation_severity)
+    oee_pct = (oee_availability_pct * oee_performance_pct * oee_quality_pct) / 10000.0
+
+    deviation_scenario, deviation_severity = _deviation_fields(batch)
 
     batches_row = {
         'batch_id': history_batch_id,
         'plant': batch.plant,
         'is_golden_batch': False,
         'batch_start_datetime': batch.started_at,
-        'batch_duration_minutes': int(batch.target_duration_minutes),
+        'batch_duration_minutes': duration,
         'deviation_scenario': deviation_scenario,
         'deviation_severity': deviation_severity,
         'theoretical_output_kg': round(theoretical_output_kg, 2),
         'actual_output_kg': round(actual_output_kg, 2),
-        'energy_kwh': round(total_energy_kwh, 2),
+        'energy_kwh': round(energy_kwh, 2),
         'assay_pct': round(assay_pct, 2),
     }
     kpis_row = {
         'batch_id': history_batch_id,
-        'cycle_time_hrs': round(batch.target_duration_minutes / 60.0, 3),
-        'process_stability_pct': stability_defaults['process_stability_pct'],
-        'process_stability_in_control_pct_temperature': stability_defaults['process_stability_in_control_pct_temperature'],
-        'process_stability_in_control_pct_process_pressure': stability_defaults['process_stability_in_control_pct_process_pressure'],
-        'process_stability_in_control_pct_flow_rate': stability_defaults['process_stability_in_control_pct_flow_rate'],
-        'golden_batch_similarity_pct': stability_defaults['golden_batch_similarity_pct'],
-        'golden_batch_similarity_pct_temperature': stability_defaults['golden_batch_similarity_pct_temperature'],
-        'golden_batch_similarity_pct_process_pressure': stability_defaults['golden_batch_similarity_pct_process_pressure'],
-        'golden_batch_similarity_pct_flow_rate': stability_defaults['golden_batch_similarity_pct_flow_rate'],
-        'fault_onset_elapsed_minutes': None,
+        'cycle_time_hrs': round(duration / 60.0, 3),
+        'process_stability_pct': round(process_stability_pct, 2),
+        'process_stability_in_control_pct_temperature': round(stability['temperature'], 2),
+        'process_stability_in_control_pct_process_pressure': round(stability['process_pressure'], 2),
+        'process_stability_in_control_pct_flow_rate': round(stability['flow_rate'], 2),
+        'golden_batch_similarity_pct': round(golden_batch_similarity_pct, 2),
+        'golden_batch_similarity_pct_temperature': round(similarity['temperature'], 2),
+        'golden_batch_similarity_pct_process_pressure': round(similarity['process_pressure'], 2),
+        'golden_batch_similarity_pct_flow_rate': round(similarity['flow_rate'], 2),
+        'fault_onset_elapsed_minutes': fault_onset,
         'theoretical_output_kg': round(theoretical_output_kg, 2),
         'actual_output_kg': round(actual_output_kg, 2),
         'assay_pct': round(assay_pct, 2),
@@ -174,9 +290,24 @@ def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
         'oee_performance_pct': round(oee_performance_pct, 2),
         'oee_quality_pct': round(oee_quality_pct, 2),
         'oee_pct': round(oee_pct, 2),
-        'total_energy_kwh': round(total_energy_kwh, 2),
+        'total_energy_kwh': round(energy_kwh, 2),
         'sec_kwh_per_kg': round(sec_kwh_per_kg, 4),
         'generation_method_version': GENERATION_METHOD_VERSION,
+        # ML KPI Prediction Agent's last-tick guess - captured purely for
+        # comparison against the real values above, no longer the source of
+        # them. None for any KPI missing from the prediction (shouldn't
+        # happen at 300+ minutes, but predict_kpis returning None is guarded).
+        'predicted_yield_pct': round(predicted_by_key['yield_pct'], 2) if 'yield_pct' in predicted_by_key else None,
+        'predicted_quality_score_pct': (
+            round(predicted_by_key['quality_score_pct'], 2) if 'quality_score_pct' in predicted_by_key else None
+        ),
+        'predicted_sec_kwh_per_kg': (
+            round(predicted_by_key['sec_kwh_per_kg'], 4) if 'sec_kwh_per_kg' in predicted_by_key else None
+        ),
+        'predicted_oee_pct': round(predicted_by_key['oee_pct'], 2) if 'oee_pct' in predicted_by_key else None,
+        'predicted_total_energy_kwh': (
+            round(predicted_by_key['total_energy_kwh'], 2) if 'total_energy_kwh' in predicted_by_key else None
+        ),
     }
 
     conn = get_connection()
@@ -206,7 +337,9 @@ def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
                     golden_batch_similarity_pct_flow_rate, fault_onset_elapsed_minutes,
                     theoretical_output_kg, actual_output_kg, assay_pct, yield_pct, quality_score_pct,
                     oee_availability_pct, oee_performance_pct, oee_quality_pct, oee_pct,
-                    total_energy_kwh, sec_kwh_per_kg, generation_method_version
+                    total_energy_kwh, sec_kwh_per_kg, generation_method_version,
+                    predicted_yield_pct, predicted_quality_score_pct, predicted_sec_kwh_per_kg,
+                    predicted_oee_pct, predicted_total_energy_kwh
                 ) VALUES (
                     %(batch_id)s, %(cycle_time_hrs)s, %(process_stability_pct)s,
                     %(process_stability_in_control_pct_temperature)s, %(process_stability_in_control_pct_process_pressure)s,
@@ -215,7 +348,9 @@ def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
                     %(golden_batch_similarity_pct_flow_rate)s, %(fault_onset_elapsed_minutes)s,
                     %(theoretical_output_kg)s, %(actual_output_kg)s, %(assay_pct)s, %(yield_pct)s, %(quality_score_pct)s,
                     %(oee_availability_pct)s, %(oee_performance_pct)s, %(oee_quality_pct)s, %(oee_pct)s,
-                    %(total_energy_kwh)s, %(sec_kwh_per_kg)s, %(generation_method_version)s
+                    %(total_energy_kwh)s, %(sec_kwh_per_kg)s, %(generation_method_version)s,
+                    %(predicted_yield_pct)s, %(predicted_quality_score_pct)s, %(predicted_sec_kwh_per_kg)s,
+                    %(predicted_oee_pct)s, %(predicted_total_energy_kwh)s
                 )
                 """,
                 kpis_row,
@@ -229,6 +364,7 @@ def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
 
     _append_to_app_state(app_state, batches_row, kpis_row)
     batch.persisted_at = datetime.now(batch.started_at.tzinfo)
+    batch.history_batch_id = history_batch_id
 
 
 def _append_to_app_state(app_state: AppState, batches_row: dict, kpis_row: dict) -> None:
@@ -249,11 +385,13 @@ def _append_to_app_state(app_state: AppState, batches_row: dict, kpis_row: dict)
 
 
 def delete_persisted_batch(batch: RunningBatch, app_state: AppState) -> None:
-    """Safe no-op if this batch was never persisted (Stopped batches, or a
-    failed persist attempt) - DELETE on a non-matching batch_id affects 0
-    rows. batch_kpis cascades automatically (ON DELETE CASCADE on its FK to
-    batches), so only the batches row needs an explicit DELETE."""
-    history_batch_id = history_batch_id_for(batch)
+    """No-op if this batch was never persisted (Stopped batches, or a failed
+    persist attempt) - batch.history_batch_id is only set on a successful
+    persist. batch_kpis cascades automatically (ON DELETE CASCADE on its FK
+    to batches), so only the batches row needs an explicit DELETE."""
+    if batch.history_batch_id is None:
+        return
+    history_batch_id = batch.history_batch_id
     conn = get_connection()
     try:
         with conn.cursor() as cur:

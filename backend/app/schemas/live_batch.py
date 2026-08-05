@@ -14,6 +14,11 @@ class RunningBatchSummary(BaseModel):
     started_at: datetime
     elapsed_minutes: int
     target_duration_minutes: int
+    # Set once this batch has been persisted to historical batches/batch_kpis
+    # (see app.live.history_writer) - the same real batch_id it now shares
+    # with the historical record, e.g. "PAR-120". None if never persisted
+    # (still Running/Stopped).
+    history_batch_id: str | None = None
 
 
 class TelemetryReadingOut(BaseModel):

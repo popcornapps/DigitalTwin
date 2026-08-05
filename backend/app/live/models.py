@@ -96,6 +96,14 @@ class RunningBatch:
     # correctness mechanism (see history_writer.py for why double-persistence
     # can't happen regardless of this field).
     persisted_at: datetime | None = None
+    # The sequential PAR-XXX id assigned at persist time (continues the same
+    # numbering as the historical batches, e.g. PAR-120), or None if never
+    # persisted. Unlike the old timestamp-derived id, a PAR-XXX number can't
+    # be recomputed later purely from this batch's own fields (it depends on
+    # whatever the highest existing PAR number was at insert time) - it must
+    # be stored here so history_writer.delete_persisted_batch knows which
+    # historical row to remove.
+    history_batch_id: str | None = None
 
 
 @dataclass
