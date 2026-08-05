@@ -102,6 +102,14 @@ export interface BatchKPIs {
   total_energy_kwh: number;
   sec_kwh_per_kg: number;
   generation_method_version: string;
+  // ML KPI Prediction Agent's last-tick guess, captured at completion for
+  // comparison against the real values above - null for historical batches
+  // (e.g. PAR-119), which never ran through the live simulator.
+  predicted_yield_pct: number | null;
+  predicted_quality_score_pct: number | null;
+  predicted_sec_kwh_per_kg: number | null;
+  predicted_oee_pct: number | null;
+  predicted_total_energy_kwh: number | null;
 }
 
 export interface PlantKpiRollup {
@@ -192,6 +200,9 @@ export interface RunningBatchSummary {
   started_at: string;
   elapsed_minutes: number;
   target_duration_minutes: number;
+  // Set once this batch has been persisted to historical batches/batch_kpis
+  // (e.g. "PAR-120") - null if never persisted (still Running/Stopped).
+  history_batch_id: string | null;
 }
 
 export interface LiveTelemetryPoint {
