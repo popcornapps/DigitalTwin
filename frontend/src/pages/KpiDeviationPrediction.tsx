@@ -393,7 +393,7 @@ export default function KpiDeviationPrediction() {
                 )}
               </div>
 
-              {/* All 4 process parameters, not just whichever 1-3 are
+              {/* All 12 process parameters, not just whichever 1-3 are
                   flagged as top contributors above - so a parameter that's
                   currently fine is still visible, not just the ones singled
                   out as problems. Same table convention as Process
@@ -404,25 +404,41 @@ export default function KpiDeviationPrediction() {
                     Process Parameter History <span className="font-normal text-gray-400">(last {prediction.history.length} min)</span>
                   </h3>
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="overflow-y-auto max-h-64">
+                    <div className="overflow-auto max-h-64">
                       <table className="w-full text-xs border-collapse">
                         <thead>
                           <tr className="text-gray-400 text-[11.25px] uppercase tracking-wide bg-gray-50">
-                            <th className="text-left font-semibold px-3 py-2">Min</th>
+                            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-gray-50">Min</th>
                             <th className="text-right font-semibold px-3 py-2">Temperature (°C)</th>
                             <th className="text-right font-semibold px-3 py-2">Pressure (bar)</th>
                             <th className="text-right font-semibold px-3 py-2">Flow Rate (L/min)</th>
                             <th className="text-right font-semibold px-3 py-2">Agitator (RPM)</th>
+                            <th className="text-right font-semibold px-3 py-2">Inlet Humidity (%RH)</th>
+                            <th className="text-right font-semibold px-3 py-2">Exhaust Temp (°C)</th>
+                            <th className="text-right font-semibold px-3 py-2">Filter DP (mbar)</th>
+                            <th className="text-right font-semibold px-3 py-2">Shaker (Hz)</th>
+                            <th className="text-right font-semibold px-3 py-2">Bed Temp (°C)</th>
+                            <th className="text-right font-semibold px-3 py-2">Chamber DP (mbar)</th>
+                            <th className="text-right font-semibold px-3 py-2">Damper (%)</th>
+                            <th className="text-right font-semibold px-3 py-2">Compressed Air (bar)</th>
                           </tr>
                         </thead>
                         <tbody>
                           {prediction.history.map((row, idx) => (
                             <tr key={row.elapsed_minutes} className={idx === 0 ? 'bg-indigo-50' : ''}>
-                              <td className={`px-3 py-1.5 font-medium ${idx === 0 ? 'text-indigo-700' : 'text-gray-500'}`}>{row.elapsed_minutes}</td>
+                              <td className={`px-3 py-1.5 font-medium sticky left-0 ${idx === 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-gray-500'}`}>{row.elapsed_minutes}</td>
                               <td className="px-3 py-1.5 text-right text-gray-700">{row.temperature.toFixed(2)}</td>
                               <td className="px-3 py-1.5 text-right text-gray-700">{row.process_pressure.toFixed(2)}</td>
                               <td className="px-3 py-1.5 text-right text-gray-700">{row.flow_rate.toFixed(2)}</td>
                               <td className="px-3 py-1.5 text-right text-gray-700">{row.agitator_rpm.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.inlet_air_humidity.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.exhaust_air_temp.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.filter_differential_pressure.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.shaker_vibration_frequency.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.product_bed_temp.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.chamber_differential_pressure.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.ahu_damper_position.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{row.compressed_air_pressure.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
