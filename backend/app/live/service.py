@@ -70,7 +70,7 @@ def get_recent_readings(running_batch_id: str, lookback_minutes: int = 30) -> li
 
 
 def seed_default_batches() -> None:
-    """Creates the 3 default running batches (Normal/Warning/Critical) once
-    at backend startup, per the running-batch design's confirmed scope."""
+    """Creates the 4 default running batches once at backend startup - see
+    config.DEFAULT_SEED_BATCHES for which parameter/severity each one uses."""
     for spec in config.DEFAULT_SEED_BATCHES:
         create_running_batch(spec['plant'], spec['scenario_profile'], spec['drifting_parameter'])

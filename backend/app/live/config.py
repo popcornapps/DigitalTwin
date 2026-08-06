@@ -20,7 +20,12 @@ from app.db import get_connection
 
 PLANTS = ['Hyderabad Plant']
 
-PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate', 'agitator_rpm')
+PARAMETER_KEYS = (
+    'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
+    'inlet_air_humidity', 'exhaust_air_temp', 'filter_differential_pressure',
+    'shaker_vibration_frequency', 'product_bed_temp', 'chamber_differential_pressure',
+    'ahu_damper_position', 'compressed_air_pressure',
+)
 
 # Maps this module's internal snake_case keys to the `parameters` table's
 # display-name primary key - a local duplicate of app.config's
@@ -31,6 +36,14 @@ _PARAMETER_TABLE_NAMES = {
     'process_pressure': 'Process Pressure',
     'flow_rate': 'Flow Rate',
     'agitator_rpm': 'Agitator RPM',
+    'inlet_air_humidity': 'Inlet Air Humidity',
+    'exhaust_air_temp': 'Exhaust Air Temperature',
+    'filter_differential_pressure': 'Filter Differential Pressure',
+    'shaker_vibration_frequency': 'Shaker Vibration Frequency',
+    'product_bed_temp': 'Product Bed Temperature',
+    'chamber_differential_pressure': 'Chamber Differential Pressure',
+    'ahu_damper_position': 'AHU Damper Position',
+    'compressed_air_pressure': 'Compressed Air Pressure',
 }
 
 _parameter_config_cache: dict | None = None
@@ -118,11 +131,21 @@ DEFAULT_DRIFTING_PARAMETER = 'temperature'
 # Per-parameter noise standard deviation for the live mean-reverting walk -
 # a simplified, visually-reasonable calibration, not bit-matched to the
 # historical generator's own noise tuning (that one isn't imported here).
+# Shaker Vibration Frequency and Compressed Air Pressure aren't listed here -
+# they follow their own burst-cycle noise in simulator.py, not this generic
+# mean-reverting walk (see generate_support_parameters.py, which uses the
+# same distinction).
 NOISE_STD = {
     'temperature': 0.3,
     'process_pressure': 0.01,
     'flow_rate': 0.4,
     'agitator_rpm': 0.5,
+    'inlet_air_humidity': 1.5,
+    'exhaust_air_temp': 0.5,
+    'filter_differential_pressure': 0.8,
+    'product_bed_temp': 0.6,
+    'chamber_differential_pressure': 0.6,
+    'ahu_damper_position': 1.5,
 }
 
 # Mean-reversion pull rate applied to the noise walk's own accumulated offset
@@ -139,9 +162,18 @@ NOISE_REVERSION_RATE = 0.15
 MAX_BATCHES_PER_PLANT_PER_DAY = 8
 
 # Default seed batches created once at backend startup - all at the single
-# supported plant (see PLANTS above); the three scenario profiles still vary.
+# supported plant (see PLANTS above). Each one names its own drifting_parameter
+# explicitly (rather than leaving it None, which would fall back to
+# DEFAULT_DRIFTING_PARAMETER='temperature' for every one of them) so a fresh
+# restart demonstrates deviations spread across both the original 4 and the
+# 8 added in Step 1 - a mix of cascading (Temperature/Flow Rate, which also
+# visibly drift their correlated new parameters) and isolated (Filter DP,
+# Shaker) examples, and both "has a historical root-cause match" (the
+# original 2) and "novel/unclassified deviation" (the new 2) LLM-reasoning
+# paths.
 DEFAULT_SEED_BATCHES = [
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Normal', 'drifting_parameter': None},
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': None},
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': None},
+    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': 'temperature'},
+    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': 'flow_rate'},
+    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': 'filter_differential_pressure'},
+    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': 'shaker_vibration_frequency'},
 ]

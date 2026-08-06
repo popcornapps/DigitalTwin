@@ -1,0 +1,196 @@
+{
+  "model_type": "RandomForestRegressor (native multi-output, 12 parameters)",
+  "hyperparameters": {
+    "n_estimators": 400,
+    "max_depth": 20
+  },
+  "random_state": 42,
+  "feature_columns": [
+    "elapsed_minutes",
+    "temperature_current",
+    "temperature_mean_30",
+    "temperature_std_30",
+    "temperature_min_30",
+    "temperature_max_30",
+    "temperature_slope_30",
+    "process_pressure_current",
+    "process_pressure_mean_30",
+    "process_pressure_std_30",
+    "process_pressure_min_30",
+    "process_pressure_max_30",
+    "process_pressure_slope_30",
+    "flow_rate_current",
+    "flow_rate_mean_30",
+    "flow_rate_std_30",
+    "flow_rate_min_30",
+    "flow_rate_max_30",
+    "flow_rate_slope_30",
+    "agitator_rpm_current",
+    "agitator_rpm_mean_30",
+    "agitator_rpm_std_30",
+    "agitator_rpm_min_30",
+    "agitator_rpm_max_30",
+    "agitator_rpm_slope_30",
+    "inlet_air_humidity_current",
+    "inlet_air_humidity_mean_30",
+    "inlet_air_humidity_std_30",
+    "inlet_air_humidity_min_30",
+    "inlet_air_humidity_max_30",
+    "inlet_air_humidity_slope_30",
+    "exhaust_air_temp_current",
+    "exhaust_air_temp_mean_30",
+    "exhaust_air_temp_std_30",
+    "exhaust_air_temp_min_30",
+    "exhaust_air_temp_max_30",
+    "exhaust_air_temp_slope_30",
+    "filter_differential_pressure_current",
+    "filter_differential_pressure_mean_30",
+    "filter_differential_pressure_std_30",
+    "filter_differential_pressure_min_30",
+    "filter_differential_pressure_max_30",
+    "filter_differential_pressure_slope_30",
+    "shaker_vibration_frequency_current",
+    "shaker_vibration_frequency_mean_30",
+    "shaker_vibration_frequency_std_30",
+    "shaker_vibration_frequency_min_30",
+    "shaker_vibration_frequency_max_30",
+    "shaker_vibration_frequency_slope_30",
+    "product_bed_temp_current",
+    "product_bed_temp_mean_30",
+    "product_bed_temp_std_30",
+    "product_bed_temp_min_30",
+    "product_bed_temp_max_30",
+    "product_bed_temp_slope_30",
+    "chamber_differential_pressure_current",
+    "chamber_differential_pressure_mean_30",
+    "chamber_differential_pressure_std_30",
+    "chamber_differential_pressure_min_30",
+    "chamber_differential_pressure_max_30",
+    "chamber_differential_pressure_slope_30",
+    "ahu_damper_position_current",
+    "ahu_damper_position_mean_30",
+    "ahu_damper_position_std_30",
+    "ahu_damper_position_min_30",
+    "ahu_damper_position_max_30",
+    "ahu_damper_position_slope_30",
+    "compressed_air_pressure_current",
+    "compressed_air_pressure_mean_30",
+    "compressed_air_pressure_std_30",
+    "compressed_air_pressure_min_30",
+    "compressed_air_pressure_max_30",
+    "compressed_air_pressure_slope_30"
+  ],
+  "target_columns": [
+    "temperature_target_30min",
+    "process_pressure_target_30min",
+    "flow_rate_target_30min",
+    "agitator_rpm_target_30min",
+    "inlet_air_humidity_target_30min",
+    "exhaust_air_temp_target_30min",
+    "filter_differential_pressure_target_30min",
+    "shaker_vibration_frequency_target_30min",
+    "product_bed_temp_target_30min",
+    "chamber_differential_pressure_target_30min",
+    "ahu_damper_position_target_30min",
+    "compressed_air_pressure_target_30min"
+  ],
+  "parameter_keys": [
+    "temperature",
+    "process_pressure",
+    "flow_rate",
+    "agitator_rpm",
+    "inlet_air_humidity",
+    "exhaust_air_temp",
+    "filter_differential_pressure",
+    "shaker_vibration_frequency",
+    "product_bed_temp",
+    "chamber_differential_pressure",
+    "ahu_damper_position",
+    "compressed_air_pressure"
+  ],
+  "trained_on": "train + val splits combined (same per-batch split as the 4-param model)",
+  "evaluated_on": "test split only",
+  "row_counts": {
+    "train": 27535,
+    "val": 5943,
+    "test": 6053,
+    "train_plus_val": 33478
+  },
+  "test_metrics": [
+    {
+      "target": "temperature_target_30min",
+      "MAE": 0.8306165965454905,
+      "RMSE": 1.497387570688492,
+      "R2": 0.9790610202976233
+    },
+    {
+      "target": "process_pressure_target_30min",
+      "MAE": 0.025234901250678617,
+      "RMSE": 0.03530043588695472,
+      "R2": 0.8686089609322171
+    },
+    {
+      "target": "flow_rate_target_30min",
+      "MAE": 1.9771334971194234,
+      "RMSE": 4.436974275143867,
+      "R2": 0.9294319441870597
+    },
+    {
+      "target": "agitator_rpm_target_30min",
+      "MAE": 0.13005747470278198,
+      "RMSE": 0.770964035103737,
+      "R2": 0.9645811918775589
+    },
+    {
+      "target": "inlet_air_humidity_target_30min",
+      "MAE": 2.3614157812054564,
+      "RMSE": 2.9751026252916413,
+      "R2": -0.05873571531307453
+    },
+    {
+      "target": "exhaust_air_temp_target_30min",
+      "MAE": 1.4397367941857007,
+      "RMSE": 2.1211602321863903,
+      "R2": 0.9378336280913906
+    },
+    {
+      "target": "filter_differential_pressure_target_30min",
+      "MAE": 1.3571001163521517,
+      "RMSE": 1.6988847518715118,
+      "R2": 0.8845268318580539
+    },
+    {
+      "target": "shaker_vibration_frequency_target_30min",
+      "MAE": 0.9100652728225874,
+      "RMSE": 1.398754166120226,
+      "R2": 0.6146629116846845
+    },
+    {
+      "target": "product_bed_temp_target_30min",
+      "MAE": 1.6178826317251545,
+      "RMSE": 2.3144636454600227,
+      "R2": 0.9450976685156158
+    },
+    {
+      "target": "chamber_differential_pressure_target_30min",
+      "MAE": 1.2038885178642142,
+      "RMSE": 1.783587905072509,
+      "R2": 0.8869451419585107
+    },
+    {
+      "target": "ahu_damper_position_target_30min",
+      "MAE": 2.928629687214821,
+      "RMSE": 3.677235408574106,
+      "R2": 0.6800503926618326
+    },
+    {
+      "target": "compressed_air_pressure_target_30min",
+      "MAE": 0.17778989300064763,
+      "RMSE": 0.24243712468277168,
+      "R2": 0.5756520628024142
+    }
+  ],
+  "sklearn_version": "1.9.0",
+  "generated_at": "2026-08-06T05:34:53Z",
+  "note": "Not wired into the running app yet - the live simulator only generates the original 4 parameters in real time. See models/paracetamol_random_forest_manifest.json for the model app/config.py actually points at."
+}

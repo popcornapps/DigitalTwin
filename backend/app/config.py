@@ -4,8 +4,15 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = BACKEND_ROOT / 'data'
 MODEL_DIR = BACKEND_ROOT / 'models'
 
-MODEL_PATH = MODEL_DIR / 'paracetamol_random_forest.joblib'
-MANIFEST_PATH = MODEL_DIR / 'paracetamol_random_forest_manifest.json'
+# Points at the 12-parameter model (scripts/train-model/train_random_forest_12param.py) -
+# the original 4-parameter paracetamol_random_forest.joblib/manifest stay on
+# disk, just unreferenced, so this is a reversible cutover, not a deletion.
+MODEL_PATH = MODEL_DIR / 'paracetamol_random_forest_12param.joblib'
+MANIFEST_PATH = MODEL_DIR / 'paracetamol_random_forest_12param_manifest.json'
+# Postgres table AppState.load() reads for test_batch_ids (see app/state.py) -
+# the 12-param counterpart of the old training_dataset table, same train/val/
+# test split per batch.
+TRAINING_DATASET_TABLE_NAME = 'training_dataset_12param'
 BATCHES_CSV = DATA_DIR / 'paracetamol_batches.csv'
 TIMESERIES_CSV = DATA_DIR / 'paracetamol_batch_timeseries.csv'
 TRAINING_DATASET_CSV = DATA_DIR / 'paracetamol_training_dataset.csv'
@@ -31,17 +38,34 @@ WARNING_MARGIN_FRACTION = 0.15
 
 CORS_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
 
+# Left as the original 3 deliberately - which parameters count toward
+# "in-spec drying" stability scoring (history_writer.py/generate_batch_kpis.py)
+# is a product decision, not something the 8 new parameters automatically
+# join just by existing.
 DRYING_PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate')
-ALL_PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate', 'agitator_rpm')
+ALL_PARAMETER_KEYS = (
+    'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
+    'inlet_air_humidity', 'exhaust_air_temp', 'filter_differential_pressure',
+    'shaker_vibration_frequency', 'product_bed_temp', 'chamber_differential_pressure',
+    'ahu_damper_position', 'compressed_air_pressure',
+)
 
 PARAMETER_CONFIG_NAMES = {
     'temperature': 'Temperature',
     'process_pressure': 'Process Pressure',
     'flow_rate': 'Flow Rate',
     'agitator_rpm': 'Agitator RPM',
+    'inlet_air_humidity': 'Inlet Air Humidity',
+    'exhaust_air_temp': 'Exhaust Air Temperature',
+    'filter_differential_pressure': 'Filter Differential Pressure',
+    'shaker_vibration_frequency': 'Shaker Vibration Frequency',
+    'product_bed_temp': 'Product Bed Temperature',
+    'chamber_differential_pressure': 'Chamber Differential Pressure',
+    'ahu_damper_position': 'AHU Damper Position',
+    'compressed_air_pressure': 'Compressed Air Pressure',
 }
 # Same mapping, used for two different purposes: PARAMETER_CONFIG_NAMES looks
-# up rows in parameter_config.csv (indexed by this display name);
+# up rows in the `parameters` Postgres table (indexed by this display name);
 # PARAMETER_LABELS is the human-readable label sent to the frontend.
 PARAMETER_LABELS = PARAMETER_CONFIG_NAMES
 PARAMETER_UNITS = {
@@ -49,6 +73,14 @@ PARAMETER_UNITS = {
     'process_pressure': 'bar',
     'flow_rate': 'L/min',
     'agitator_rpm': 'RPM',
+    'inlet_air_humidity': '%RH',
+    'exhaust_air_temp': '°C',
+    'filter_differential_pressure': 'mbar',
+    'shaker_vibration_frequency': 'Hz',
+    'product_bed_temp': '°C',
+    'chamber_differential_pressure': 'mbar',
+    'ahu_damper_position': '%',
+    'compressed_air_pressure': 'bar',
 }
 
 # Plant-manager KPI aggregation: shift/day/month rollups over historical

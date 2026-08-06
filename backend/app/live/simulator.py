@@ -21,6 +21,17 @@ def _lerp(t: float, t0: float, t1: float, v0: float, v1: float) -> float:
     return v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
 
 
+# --- The 8 new parameters (see scripts/generate-support-parameters/) -
+# same correlation design as that historical generator, adapted to per-tick
+# live simulation. Unlike that script, this class already knows its own
+# exact phase boundaries at construction time (self._boundaries), so there's
+# no duration-based reconstruction uncertainty to work around here. ---
+
+SEVERITY_MULTIPLIER = {'Normal': 0.0, 'Warning': 0.5, 'Critical': 1.0}
+BURST_INTERVAL_MINUTES = 45.0
+BURST_DURATION_MINUTES = 12.0
+
+
 class BatchSimulator:
     def __init__(self, running_batch_id: str, scenario_profile: str, drifting_parameter: str | None):
         self.running_batch_id = running_batch_id
@@ -34,6 +45,7 @@ class BatchSimulator:
         self._boundaries = self._build_phase_boundaries()
         self._drift_direction = {key: self._rng.choice([-1, 1]) for key in config.PARAMETER_KEYS}
         self._noise_state = {key: 0.0 for key in config.PARAMETER_KEYS}
+        self._shaker_burst_offset = self._rng.uniform(0, BURST_INTERVAL_MINUTES)
 
     def _build_phase_boundaries(self) -> dict[str, float]:
         def jitter(minutes: int) -> float:
@@ -161,6 +173,64 @@ class BatchSimulator:
         shear_bump = 0.06 * max(0.0, current_rpm - 18) if b['dry_mixing_end'] <= t < b['wet_massing_end'] else 0.0
         return base + shear_bump
 
+    # --- The 8 new parameters' baseline curves - correlated with the
+    # original 4 exactly like generate_support_parameters.py, just computed
+    # live from this tick's own values instead of a whole finished batch. ---
+
+    def _gap_at(self, t: float, pre_drying_gap: float, gap_start_val: float, gap_end_val: float) -> float:
+        """Same smooth gap-ramp as generate_support_parameters.py's fixed
+        gap_at (small pre-drying, ramping up at drying start, narrowing by
+        drying end) - reused here, not reimplemented from scratch."""
+        transfer_end, drying_end = self._boundaries['transfer_end'], self._boundaries['drying_end']
+        drying_duration = drying_end - transfer_end
+        rise_window = min(0.15 * drying_duration, 40.0) if drying_duration > 0 else 0.0
+        rise_end = transfer_end + rise_window
+        if t <= transfer_end:
+            return pre_drying_gap
+        if t <= rise_end and rise_window > 0:
+            frac = (t - transfer_end) / rise_window
+            return pre_drying_gap + (gap_start_val - pre_drying_gap) * frac
+        if t >= drying_end:
+            return gap_end_val
+        frac = (t - rise_end) / (drying_end - rise_end) if drying_end > rise_end else 1.0
+        return gap_start_val + (gap_end_val - gap_start_val) * frac
+
+    def _exhaust_air_temp_baseline(self, t: float, temperature: float) -> float:
+        return temperature - self._gap_at(t, 3.0, 25.0, 8.0)
+
+    def _product_bed_temp_baseline(self, t: float, temperature: float) -> float:
+        return temperature - self._gap_at(t, 4.0, 27.0, 5.0)
+
+    def _filter_dp_baseline(self, t: float) -> float:
+        duration = self.target_duration_minutes()
+        frac = t / duration if duration else 0.0
+        severity_mult = SEVERITY_MULTIPLIER[self.scenario_profile]
+        extra = severity_mult * (6.0 if self.drifting_parameter == 'flow_rate' else 5.0 if self.drifting_parameter == 'process_pressure' else 0.0)
+        return 3.0 + (20.0 - 3.0) * frac + extra * frac
+
+    def _chamber_dp_baseline(self, t: float, flow_rate: float) -> float:
+        severity_mult = SEVERITY_MULTIPLIER[self.scenario_profile]
+        extra = severity_mult * 4.0 if self.drifting_parameter == 'process_pressure' else 0.0
+        duration = self.target_duration_minutes()
+        frac = t / duration if duration else 0.0
+        return 0.30 * flow_rate + 0.01 * t + extra * frac
+
+    def _damper_baseline(self, filter_dp: float) -> float:
+        return 50.0 + 1.2 * (filter_dp - 3.0)
+
+    def _shaker_and_compressed_air_at(self, t: float) -> tuple[float, float]:
+        phase_pos = (t + self._shaker_burst_offset) % BURST_INTERVAL_MINUTES
+        in_burst = phase_pos < BURST_DURATION_MINUTES
+        if in_burst:
+            bump_frac = 1.0 - abs((phase_pos / BURST_DURATION_MINUTES) - 0.5) * 2
+            shaker_base = 2.0 + 6.0 * bump_frac
+        else:
+            shaker_base = 0.3
+        shaker = max(0.0, shaker_base + self._rng.gauss(0, 0.4))
+        dip = 0.8 if in_burst else 0.0
+        compressed_air = max(4.0, min(7.5, 6.0 - dip + self._rng.gauss(0, 0.12)))
+        return shaker, compressed_air
+
     # --- Noise + drift, applied on top of the baseline ---
 
     def _noise_step(self, key: str) -> float:
@@ -191,6 +261,23 @@ class BatchSimulator:
         process_pressure = max(0.0, self._process_pressure_baseline(t) + self._noise_step('process_pressure') + self._drift_offset('process_pressure', t))
         temperature = self._temperature_baseline(t, agitator_rpm) + self._noise_step('temperature') + self._drift_offset('temperature', t)
 
+        # The 8 new parameters - Exhaust/Bed Temp and Chamber DP are derived
+        # from this tick's OWN temperature/flow_rate (above), so they inherit
+        # any live drift/noise in those for free whenever one of the
+        # original 4 is the chosen fault source, same design as the
+        # historical generator. Each also gets its own `_drift_offset` call
+        # so any of the 8 can ALSO be picked directly as the fault source
+        # (it's a no-op unless `self.drifting_parameter` is that exact key).
+        inlet_air_humidity = min(35.0, max(10.0, 20.0 + self._noise_step('inlet_air_humidity') + self._drift_offset('inlet_air_humidity', t)))
+        exhaust_air_temp = min(70.0, max(20.0, self._exhaust_air_temp_baseline(t, temperature) + self._noise_step('exhaust_air_temp') + self._drift_offset('exhaust_air_temp', t)))
+        product_bed_temp = min(70.0, max(20.0, self._product_bed_temp_baseline(t, temperature) + self._noise_step('product_bed_temp') + self._drift_offset('product_bed_temp', t)))
+        filter_differential_pressure = min(40.0, max(1.0, self._filter_dp_baseline(t) + self._noise_step('filter_differential_pressure') + self._drift_offset('filter_differential_pressure', t)))
+        chamber_differential_pressure = min(45.0, max(0.0, self._chamber_dp_baseline(t, flow_rate) + self._noise_step('chamber_differential_pressure') + self._drift_offset('chamber_differential_pressure', t)))
+        ahu_damper_position = min(100.0, max(0.0, self._damper_baseline(filter_differential_pressure) + self._noise_step('ahu_damper_position') + self._drift_offset('ahu_damper_position', t)))
+        shaker_vibration_frequency, compressed_air_pressure = self._shaker_and_compressed_air_at(t)
+        shaker_vibration_frequency = max(0.0, shaker_vibration_frequency + self._drift_offset('shaker_vibration_frequency', t))
+        compressed_air_pressure = min(7.5, max(4.0, compressed_air_pressure + self._drift_offset('compressed_air_pressure', t)))
+
         return TelemetryReading(
             running_batch_id=self.running_batch_id,
             elapsed_minutes=int(t),
@@ -200,4 +287,12 @@ class BatchSimulator:
             process_pressure=round(process_pressure, 3),
             flow_rate=round(flow_rate, 2),
             agitator_rpm=round(agitator_rpm, 1),
+            inlet_air_humidity=round(inlet_air_humidity, 2),
+            exhaust_air_temp=round(exhaust_air_temp, 2),
+            filter_differential_pressure=round(filter_differential_pressure, 2),
+            shaker_vibration_frequency=round(shaker_vibration_frequency, 2),
+            product_bed_temp=round(product_bed_temp, 2),
+            chamber_differential_pressure=round(chamber_differential_pressure, 2),
+            ahu_damper_position=round(ahu_damper_position, 2),
+            compressed_air_pressure=round(compressed_air_pressure, 2),
         )

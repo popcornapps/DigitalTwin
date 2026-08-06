@@ -60,10 +60,26 @@ class AppState:
         # (data_service.get_timeline, deviation_agent._golden_value_at)
         # already explicitly casts to float()/int() before use, and neither
         # depends on this DataFrame's row order or index.
+        #
+        # Joined with batch_support_timeseries (the 8 parameters added in
+        # scripts/generate-support-parameters/) so every consumer of this
+        # DataFrame - golden_reference.golden_value_at() in particular - sees
+        # all 12 parameters through the same lookup, with no code change of
+        # its own. INNER JOIN: a handful of batches predate the support table
+        # (see generate_support_parameters.py's docstring) and are correctly
+        # excluded from anything reading this DataFrame, same as before.
         with get_connection() as conn:
             self.timeseries_df = pd.read_sql(
-                'SELECT batch_id, elapsed_minutes, temperature, process_pressure, flow_rate, agitator_rpm '
-                'FROM batch_timeseries',
+                'SELECT t.batch_id, t.elapsed_minutes, t.temperature, t.process_pressure, t.flow_rate, t.agitator_rpm, '
+                's.inlet_air_humidity_pct AS inlet_air_humidity, s.exhaust_air_temp_c AS exhaust_air_temp, '
+                's.filter_differential_pressure_mbar AS filter_differential_pressure, '
+                's.shaker_vibration_frequency_hz AS shaker_vibration_frequency, '
+                's.product_bed_temp_c AS product_bed_temp, '
+                's.chamber_differential_pressure_mbar AS chamber_differential_pressure, '
+                's.ahu_damper_position_pct AS ahu_damper_position, '
+                's.compressed_air_pressure_bar AS compressed_air_pressure '
+                'FROM batch_timeseries t '
+                'JOIN batch_support_timeseries s ON s.batch_id = t.batch_id AND s.elapsed_minutes = t.elapsed_minutes',
                 conn,
             )
         # Table 4 - was pd.read_csv(config.BATCH_KPIS_CSV). No gotchas:
@@ -95,7 +111,7 @@ class AppState:
         ))
         with get_connection() as conn:
             self.training_df = pd.read_sql(
-                f"SELECT {', '.join(needed_columns)} FROM training_dataset", conn
+                f"SELECT {', '.join(needed_columns)} FROM {config.TRAINING_DATASET_TABLE_NAME}", conn
             )
         self.test_batch_ids = set(self.training_df.loc[self.training_df['split'] == 'test', 'batch_id'].unique())
 

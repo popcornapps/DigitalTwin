@@ -69,6 +69,14 @@ def get_telemetry(running_batch_id: str):
             process_pressure=r.process_pressure,
             flow_rate=r.flow_rate,
             agitator_rpm=r.agitator_rpm,
+            inlet_air_humidity=r.inlet_air_humidity,
+            exhaust_air_temp=r.exhaust_air_temp,
+            filter_differential_pressure=r.filter_differential_pressure,
+            shaker_vibration_frequency=r.shaker_vibration_frequency,
+            product_bed_temp=r.product_bed_temp,
+            chamber_differential_pressure=r.chamber_differential_pressure,
+            ahu_damper_position=r.ahu_damper_position,
+            compressed_air_pressure=r.compressed_air_pressure,
         )
         for r in history
     ]

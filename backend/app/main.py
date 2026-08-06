@@ -14,7 +14,7 @@ from app.state import app_state
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     app_state.load()  # model (~400MB) + reference data loaded once, held for the process lifetime
-    live_service.seed_default_batches()  # 3 default running batches: Normal, Warning, Critical
+    live_service.seed_default_batches()  # 4 default running batches, spread across old + new parameters
     tick_task = live_scheduler.start()
     yield
     tick_task.cancel()

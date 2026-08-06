@@ -73,6 +73,14 @@ def get_timeline(state: AppState, batch_id: str) -> TimelineResponse | None:
             process_pressure=float(r.process_pressure),
             flow_rate=float(r.flow_rate),
             agitator_rpm=float(r.agitator_rpm),
+            inlet_air_humidity=float(r.inlet_air_humidity),
+            exhaust_air_temp=float(r.exhaust_air_temp),
+            filter_differential_pressure=float(r.filter_differential_pressure),
+            shaker_vibration_frequency=float(r.shaker_vibration_frequency),
+            product_bed_temp=float(r.product_bed_temp),
+            chamber_differential_pressure=float(r.chamber_differential_pressure),
+            ahu_damper_position=float(r.ahu_damper_position),
+            compressed_air_pressure=float(r.compressed_air_pressure),
         )
         for r in rows.itertuples()
     ]
