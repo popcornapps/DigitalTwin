@@ -17,6 +17,14 @@ const DRIFTING_PARAMETERS = [
   { value: 'process_pressure', label: 'Process Pressure' },
   { value: 'flow_rate', label: 'Flow Rate' },
   { value: 'agitator_rpm', label: 'Agitator RPM' },
+  { value: 'inlet_air_humidity', label: 'Inlet Air Humidity' },
+  { value: 'exhaust_air_temp', label: 'Exhaust Air Temperature' },
+  { value: 'filter_differential_pressure', label: 'Filter Differential Pressure' },
+  { value: 'shaker_vibration_frequency', label: 'Shaker Vibration Frequency' },
+  { value: 'product_bed_temp', label: 'Product Bed Temperature' },
+  { value: 'chamber_differential_pressure', label: 'Chamber Differential Pressure' },
+  { value: 'ahu_damper_position', label: 'AHU Damper Position' },
+  { value: 'compressed_air_pressure', label: 'Compressed Air Pressure' },
 ];
 
 const STATUS_BADGE: Record<string, string> = {

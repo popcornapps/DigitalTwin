@@ -29,6 +29,14 @@ interface NormalizedPoint {
   process_pressure: number;
   flow_rate: number;
   agitator_rpm: number;
+  inlet_air_humidity: number;
+  exhaust_air_temp: number;
+  filter_differential_pressure: number;
+  shaker_vibration_frequency: number;
+  product_bed_temp: number;
+  chamber_differential_pressure: number;
+  ahu_damper_position: number;
+  compressed_air_pressure: number;
 }
 
 interface ParamCard {

@@ -62,6 +62,14 @@ export interface TimelinePoint {
   process_pressure: number;
   flow_rate: number;
   agitator_rpm: number;
+  inlet_air_humidity: number;
+  exhaust_air_temp: number;
+  filter_differential_pressure: number;
+  shaker_vibration_frequency: number;
+  product_bed_temp: number;
+  chamber_differential_pressure: number;
+  ahu_damper_position: number;
+  compressed_air_pressure: number;
 }
 
 export interface TimelineResponse {
@@ -164,6 +172,22 @@ export interface GoldenEnvelopePoint {
   flow_rate_upper_offset: number;
   agitator_rpm_lower_offset: number;
   agitator_rpm_upper_offset: number;
+  inlet_air_humidity_lower_offset: number;
+  inlet_air_humidity_upper_offset: number;
+  exhaust_air_temp_lower_offset: number;
+  exhaust_air_temp_upper_offset: number;
+  filter_differential_pressure_lower_offset: number;
+  filter_differential_pressure_upper_offset: number;
+  shaker_vibration_frequency_lower_offset: number;
+  shaker_vibration_frequency_upper_offset: number;
+  product_bed_temp_lower_offset: number;
+  product_bed_temp_upper_offset: number;
+  chamber_differential_pressure_lower_offset: number;
+  chamber_differential_pressure_upper_offset: number;
+  ahu_damper_position_lower_offset: number;
+  ahu_damper_position_upper_offset: number;
+  compressed_air_pressure_lower_offset: number;
+  compressed_air_pressure_upper_offset: number;
 }
 
 export const fetchGoldenEnvelope = (): Promise<GoldenEnvelopePoint[]> => fetchJson('/parameters/envelope');
@@ -213,6 +237,14 @@ export interface LiveTelemetryPoint {
   process_pressure: number;
   flow_rate: number;
   agitator_rpm: number;
+  inlet_air_humidity: number;
+  exhaust_air_temp: number;
+  filter_differential_pressure: number;
+  shaker_vibration_frequency: number;
+  product_bed_temp: number;
+  chamber_differential_pressure: number;
+  ahu_damper_position: number;
+  compressed_air_pressure: number;
 }
 
 export interface LiveParameterPrediction {

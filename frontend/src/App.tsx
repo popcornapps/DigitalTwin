@@ -80,19 +80,13 @@ function Sidebar() {
 }
 
 function Header() {
-  const location = useLocation();
   const {
     selectedPlant, setSelectedPlant,
     selectedProduct, setSelectedProduct,
-    selectedBatch, setSelectedBatch,
-    availableBatches,
     selectedPersona, setSelectedPersona
   } = useFilter();
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  const isDashboard = location.pathname === '/' || location.pathname === '/dashboard';
-
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 select-none">
