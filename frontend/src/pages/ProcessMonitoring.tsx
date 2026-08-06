@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, ReferenceArea, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import {
   Info, Loader2, AlertTriangle, Square, Bot,
@@ -133,6 +133,12 @@ export default function ProcessMonitoring() {
   const [goldenTimeline, setGoldenTimeline] = useState<TimelineResponse | null>(null);
   const [goldenEnvelope, setGoldenEnvelope] = useState<GoldenEnvelopePoint[]>([]);
   const [activeParamKey, setActiveParamKey] = useState('temperature');
+  // Scrolled into view when a parameter card is clicked, so the chart/Agent
+  // Assessment section (which renders below the card grid) is immediately
+  // visible instead of requiring a manual scroll - especially relevant now
+  // that 12 cards push this section further down the page than the
+  // original 4 did.
+  const detailSectionRef = useRef<HTMLDivElement | null>(null);
 
   // AI Analysis Mode - a global backend switch (see backend/app/live/ai_mode.py),
   // not per-batch. Defaults to Static until the real value loads, matching
@@ -532,7 +538,10 @@ export default function ProcessMonitoring() {
             <button
               key={param.key}
               type="button"
-              onClick={() => setActiveParamKey(param.key)}
+              onClick={() => {
+                setActiveParamKey(param.key);
+                detailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
               className={`w-full text-left bg-white rounded-lg shadow-sm border p-5 relative overflow-hidden transition-all hover:shadow-md ${
                 isSelected ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200 hover:border-indigo-200'
               }`}
@@ -578,7 +587,7 @@ export default function ProcessMonitoring() {
         </div>
 
         {activeParamObj && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          <div ref={detailSectionRef} className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 flex flex-col">
                 <div className="flex justify-between items-center mb-2">
