@@ -37,13 +37,21 @@ class KpiPredictionOut(BaseModel):
 
 class KpiHistoryPointOut(BaseModel):
     """One raw telemetry reading, for the small multi-row history table
-    showing all 4 process parameters - not just whichever 1-3 are currently
+    showing all 12 process parameters - not just whichever 1-3 are currently
     flagged as top contributors above."""
     elapsed_minutes: int
     temperature: float
     process_pressure: float
     flow_rate: float
     agitator_rpm: float
+    inlet_air_humidity: float
+    exhaust_air_temp: float
+    filter_differential_pressure: float
+    shaker_vibration_frequency: float
+    product_bed_temp: float
+    chamber_differential_pressure: float
+    ahu_damper_position: float
+    compressed_air_pressure: float
 
 
 class KpiPredictionResponse(BaseModel):

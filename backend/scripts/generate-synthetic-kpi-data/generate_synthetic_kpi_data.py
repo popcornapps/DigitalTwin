@@ -47,32 +47,48 @@ against the phase-correct expected value - the same "ported, not imported,
 kept in sync by hand" convention that file and backend/app/live/config.py
 already use.
 
+12 parameters, not 4 (updated for the Step 1/3 process-parameter expansion):
+the ORIGINAL 4 (Temperature/Process Pressure/Flow Rate/Agitator RPM) still
+drive the KPI formula chain below, unchanged - there is no real basis for,
+say, Shaker Vibration directly causing a Yield change, so this generator
+does NOT invent new KPI-causing relationships for the 8 new parameters. It
+DOES give the model their values as additional correlated input signal - the
+same real correlations already used in
+scripts/generate-support-parameters/generate_support_parameters.py (history)
+and app/live/simulator.py (live): Exhaust/Product Bed Temp track Temperature,
+Chamber Differential Pressure tracks Flow Rate, Filter Differential Pressure
+rises over the batch (+ extra drift if Flow Rate/Process Pressure is the
+drifting scenario), AHU Damper Position responds to Filter DP, Inlet Air
+Humidity is flat/ambient, Shaker Vibration + Compressed Air Pressure follow a
+periodic filter-cleaning burst cycle - ported a third time here, same
+"ported, not imported" convention.
+
 Entirely self-contained otherwise: does not read, import, or depend on any
 existing data/model file used by the real parameter-prediction pipeline
 (paracetamol_batch_timeseries.csv, paracetamol_training_dataset.csv,
 paracetamol_random_forest.joblib, paracetamol_golden_envelope.csv, etc.) or
-the app.live/app.services live-agent code.
+the app.live/app.services live-agent code - it reaches into Postgres only to
+WRITE its own output table, via app.db's generic connection helper.
 
-Outputs (all new files - nothing existing is touched):
-- data/synthetic_kpi_training_dataset.csv   (features + 5 final-outcome targets, many rows per synthetic batch)
-- data/synthetic_kpi_golden_final.json      (ideal/zero-deviation final KPI reference, 5 flat constants)
-- data/synthetic_kpi_manifest.json          (feature/target columns, generation parameters)
+Output: inserts feature+target rows directly into the Postgres table
+synthetic_kpi_training_dataset_12param (see
+scripts/postgres-migration/schema_synthetic_kpi_training_dataset_12param.sql)
+- no CSV/JSON files, unlike the version of this script that predates the
+12-parameter expansion. scripts/train-synthetic-kpi-model/
+train_synthetic_kpi_model_12param.py reads straight from that table.
 """
-import csv
-import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / 'data'
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(BACKEND_ROOT))
 
-OUT_TRAINING_CSV = DATA_DIR / 'synthetic_kpi_training_dataset.csv'
-OUT_GOLDEN_JSON = DATA_DIR / 'synthetic_kpi_golden_final.json'
-OUT_MANIFEST = DATA_DIR / 'synthetic_kpi_manifest.json'
+from app.db import get_connection  # noqa: E402
 
-GENERATION_METHOD_VERSION = 'v4-realistic-variability'
+GENERATION_METHOD_VERSION = 'v5-12param'
 
 # The live-batch subsystem this agent serves only ever simulates one plant
 # and one product (backend/app/live/config.py's PLANTS list and
@@ -83,16 +99,31 @@ GENERATION_METHOD_VERSION = 'v4-realistic-variability'
 PLANT = 'Hyderabad Plant'
 PRODUCT = 'Paracetamol 500mg'
 
-PARAMETER_KEYS = ('temperature', 'process_pressure', 'flow_rate', 'agitator_rpm')
+PARAMETER_KEYS = (
+    'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
+    'inlet_air_humidity', 'exhaust_air_temp', 'filter_differential_pressure',
+    'shaker_vibration_frequency', 'product_bed_temp', 'chamber_differential_pressure',
+    'ahu_damper_position', 'compressed_air_pressure',
+)
 
 # Only upper_limit/lower_limit are used (as the normalization scale for the
 # deviation score) - the phase-correct expected value at any instant comes
-# from the baseline-curve functions further down, not a flat target.
+# from the baseline-curve functions further down, not a flat target. The 8
+# new parameters' limits match the real Postgres `parameters` table rows
+# added in Step 1 (scripts/generate-support-parameters/).
 PARAMETER_CONFIG = {
     'temperature': {'lower_limit': 63.0, 'upper_limit': 67.0},
     'process_pressure': {'lower_limit': 1.1, 'upper_limit': 1.3},
     'flow_rate': {'lower_limit': 45.0, 'upper_limit': 52.0},
     'agitator_rpm': {'lower_limit': 20.0, 'upper_limit': 24.0},
+    'inlet_air_humidity': {'lower_limit': 15.0, 'upper_limit': 30.0},
+    'exhaust_air_temp': {'lower_limit': 35.0, 'upper_limit': 60.0},
+    'filter_differential_pressure': {'lower_limit': 3.0, 'upper_limit': 20.0},
+    'shaker_vibration_frequency': {'lower_limit': 0.0, 'upper_limit': 10.0},
+    'product_bed_temp': {'lower_limit': 38.0, 'upper_limit': 60.0},
+    'chamber_differential_pressure': {'lower_limit': 5.0, 'upper_limit': 25.0},
+    'ahu_damper_position': {'lower_limit': 40.0, 'upper_limit': 70.0},
+    'compressed_air_pressure': {'lower_limit': 5.0, 'upper_limit': 7.0},
 }
 
 LOOKBACK_MINUTES = 30  # input window size only - there is no prediction horizon anymore
@@ -103,6 +134,9 @@ N_BATCHES = 600
 # simulator.py's BatchSimulator (see module docstring for why). ---
 NOMINAL_PHASE_DURATIONS = {'dispensing': 25, 'dry_mixing': 20, 'wet_massing': 25, 'transfer': 15, 'drying': 270, 'cooling': 30}
 NOMINAL_TOTAL_DURATION = sum(NOMINAL_PHASE_DURATIONS.values())  # 385 - the "ideal" reference duration for OEE Availability
+
+BURST_INTERVAL_MINUTES = 45.0
+BURST_DURATION_MINUTES = 12.0
 
 
 def _lerp(t, t0, t1, v0, v1):
@@ -132,9 +166,10 @@ def _phase_boundaries(rng):
 def _sample_onset(rng, key, b, duration, drifting_params):
     """Earliest point this parameter's meaningful window opens (matches
     backend/app/live/simulator.py's _drift_offset exactly: Agitator RPM's
-    only meaningful window is dispensing-end onward; the other 3 parameters'
-    starts at transfer_end, roughly when drying begins), PLUS a random delay
-    on top for whichever parameter(s) are actually drifting.
+    only meaningful window is dispensing-end onward; every other parameter -
+    including the 8 new ones - starts at transfer_end, roughly when drying
+    begins), PLUS a random delay on top for whichever parameter(s) are
+    actually drifting.
 
     This delay matters for realism, not just machine learning: real faults
     (equipment wear, raw material variability, calibration drift) don't all
@@ -155,15 +190,16 @@ def _sample_onset(rng, key, b, duration, drifting_params):
     if key not in drifting_params:
         return earliest
     # Agitator RPM's own meaningful window is short (dispensing_end through
-    # wet_massing_end) - the other 3 stay meaningful all the way to the end
-    # of the batch. The delay fraction (0.35, not the wider range tried
-    # initially) is a deliberate calibration: too wide, and too many batches
-    # end up with almost no informative window left before the batch ends
-    # (verified this empirically - an 0.8 fraction pushed 18% of drifting
-    # batches past 70% of their own duration before onset, and measurably
-    # hurt model accuracy). This keeps onset timing genuinely varied - not
-    # locked to one fixed instant like before - while still leaving most
-    # batches enough runway afterward to show a learnable pattern.
+    # wet_massing_end) - every other parameter (original + new) stays
+    # meaningful all the way to the end of the batch. The delay fraction
+    # (0.35, not the wider range tried initially) is a deliberate
+    # calibration: too wide, and too many batches end up with almost no
+    # informative window left before the batch ends (verified this
+    # empirically - an 0.8 fraction pushed 18% of drifting batches past 70%
+    # of their own duration before onset, and measurably hurt model
+    # accuracy). This keeps onset timing genuinely varied - not locked to
+    # one fixed instant like before - while still leaving most batches
+    # enough runway afterward to show a learnable pattern.
     latest_meaningful = b['wet_massing_end'] if key == 'agitator_rpm' else duration
     max_delay = max(0.0, (latest_meaningful - earliest) * 0.35)
     return earliest + (float(rng.uniform(0, max_delay)) if max_delay > 0 else 0.0)
@@ -242,6 +278,50 @@ def _temperature_baseline(b, t, current_rpm):
     return base + shear_bump
 
 
+# --- The 8 new parameters' baseline curves - same correlation design as
+# scripts/generate-support-parameters/generate_support_parameters.py (history)
+# and app/live/simulator.py (live), ported a third time. ---
+
+def _gap_at(b, t, pre_drying_gap, gap_start_val, gap_end_val):
+    """Same smooth gap-ramp used in the other two ports: small pre-drying,
+    ramping up at drying start, narrowing by drying end - avoids the floor-
+    clamp discontinuity an earlier (fixed) version of this design had."""
+    transfer_end, drying_end = b['transfer_end'], b['drying_end']
+    drying_duration = drying_end - transfer_end
+    rise_window = min(0.15 * drying_duration, 40.0) if drying_duration > 0 else 0.0
+    rise_end = transfer_end + rise_window
+    if t <= transfer_end:
+        return pre_drying_gap
+    if t <= rise_end and rise_window > 0:
+        frac = (t - transfer_end) / rise_window
+        return pre_drying_gap + (gap_start_val - pre_drying_gap) * frac
+    if t >= drying_end:
+        return gap_end_val
+    frac = (t - rise_end) / (drying_end - rise_end) if drying_end > rise_end else 1.0
+    return gap_start_val + (gap_end_val - gap_start_val) * frac
+
+
+def _exhaust_air_temp_baseline(b, t, temperature):
+    return temperature - _gap_at(b, t, 3.0, 25.0, 8.0)
+
+
+def _product_bed_temp_baseline(b, t, temperature):
+    return temperature - _gap_at(b, t, 4.0, 27.0, 5.0)
+
+
+def _filter_dp_baseline(b, t, duration, extra_severity):
+    frac = t / duration if duration else 0.0
+    return 3.0 + (20.0 - 3.0) * frac + extra_severity * frac
+
+
+def _chamber_dp_baseline(t, flow_rate, extra_severity):
+    return 0.30 * flow_rate + 0.01 * t + extra_severity
+
+
+def _damper_baseline(filter_dp):
+    return 50.0 + 1.2 * (filter_dp - 3.0)
+
+
 # Small, per-batch, per-parameter operating-point offset - drawn ONCE per
 # batch (not evolving over time like noise/drift). Represents legitimate
 # batch-to-batch variability (raw material lot potency, minor equipment
@@ -252,6 +332,9 @@ def _temperature_baseline(b, t, current_rpm):
 # below - only in the raw feature values. Without this, every Normal batch
 # shared the exact same target curve and differed only by phase-timing
 # jitter, which is more uniform than any real plant's batch-to-batch spread.
+# Only defined for the original 4 - the 8 new ones are either derived FROM
+# these (and so inherit their personality automatically) or independent
+# ambient/cyclic signals with no real "operating point" of their own.
 BATCH_PERSONALITY_STD = {
     'temperature': 0.2,
     'process_pressure': 0.01,
@@ -270,8 +353,14 @@ def _apply_personality(base, offset, key):
     return base + offset
 
 
-# Which parameter(s) drift together, weighted so ~30% of batches are clean
+# Which parameter(s) drift together, weighted so ~28% of batches are clean
 # Normal runs - a rough match to the real historical dataset's proportions.
+# Two new entries (FilterDP_Drift, Shaker_Drift) give the model realistic
+# examples of the 8 new parameters deviating INDEPENDENTLY of the original
+# 4 - without these, the model would never see that combination and could
+# mislearn "any deviation in the new 8 must mean the original 4 are also
+# off", which isn't true (see module docstring: no KPI-causing relationship
+# was invented for them).
 SCENARIOS = [
     ('Normal', ()),
     ('Temperature_Drift', ('temperature',)),
@@ -280,8 +369,10 @@ SCENARIOS = [
     ('Agitator_Drift', ('agitator_rpm',)),
     ('Correlated_TempAgitator', ('temperature', 'agitator_rpm')),
     ('Correlated_PressureFlow', ('process_pressure', 'flow_rate')),
+    ('FilterDP_Drift', ('filter_differential_pressure',)),
+    ('Shaker_Drift', ('shaker_vibration_frequency',)),
 ]
-SCENARIO_WEIGHTS = [0.30, 0.13, 0.13, 0.13, 0.13, 0.09, 0.09]
+SCENARIO_WEIGHTS = [0.28, 0.12, 0.12, 0.12, 0.12, 0.08, 0.08, 0.04, 0.04]
 
 # Multiple of the parameter's own band half-width that the deviation ramps up
 # to by the end of the batch. Each tier is a RANGE, not a fixed point - real
@@ -310,12 +401,21 @@ SEVERITY_WEIGHTS = [0.4, 0.35, 0.25]
 # fluctuation nudges both together), not independent random walks. The
 # independent stds below are reduced just enough that each parameter's TOTAL
 # noise level (independent + its share of the common disturbance) still
-# lands close to the original NOISE_STD scale referenced above.
+# lands close to the original NOISE_STD scale referenced above. Shaker
+# Vibration Frequency and Compressed Air Pressure aren't listed here - they
+# follow their own burst-cycle noise below, not this generic walk (matching
+# app/live/simulator.py's same distinction).
 INDEPENDENT_NOISE_STD = {
     'temperature': 0.26,
     'process_pressure': 0.009,
     'flow_rate': 0.4,
     'agitator_rpm': 0.5,
+    'inlet_air_humidity': 1.5,
+    'exhaust_air_temp': 0.5,
+    'filter_differential_pressure': 0.8,
+    'product_bed_temp': 0.6,
+    'chamber_differential_pressure': 0.6,
+    'ahu_damper_position': 1.5,
 }
 COMMON_NOISE_STD = 1.0  # innovation std of the shared disturbance process, in an arbitrary unit - see COMMON_NOISE_WEIGHT for how it maps into each parameter's own units
 COMMON_NOISE_WEIGHT = {'temperature': 0.08, 'process_pressure': 0.003}  # Flow Rate/Agitator RPM aren't part of this shared disturbance
@@ -343,13 +443,19 @@ def simulate_parameter_series(rng, drifting_params, severity_mult, directions, d
     separately so downstream calculations can compute a residual against the
     correct reference at each instant, not a single flat number. onset is the
     per-parameter onset-minute dict (see _sample_onset) - randomized per
-    batch for whichever parameter(s) are actually drifting."""
+    batch for whichever parameter(s) are actually drifting.
+
+    The 8 new parameters are computed from the SAME tick's original-4 values
+    (both the drifted/noisy series AND the clean baseline_series) - Exhaust/
+    Bed Temp and Chamber DP inherit whatever drift Temperature/Flow Rate
+    already have "for free", exactly like the historical and live ports."""
     b = _phase_boundaries(rng)
     duration = b['cooling_end'] + duration_extension
     onset = {key: _sample_onset(rng, key, b, duration, drifting_params) for key in PARAMETER_KEYS}
-    personality_offset = {key: float(rng.normal(0, BATCH_PERSONALITY_STD[key])) for key in PARAMETER_KEYS}
+    personality_offset = {key: float(rng.normal(0, BATCH_PERSONALITY_STD[key])) for key in BATCH_PERSONALITY_STD}
     noise_state = {key: 0.0 for key in PARAMETER_KEYS}
     common_state = 0.0  # shared disturbance driving Temperature/Process Pressure's correlated noise component - see COMMON_NOISE_WEIGHT
+    shaker_burst_offset = float(rng.uniform(0, BURST_INTERVAL_MINUTES))
 
     series = {key: np.zeros(duration + 1) for key in PARAMETER_KEYS}
     baseline_series = {key: np.zeros(duration + 1) for key in PARAMETER_KEYS}
@@ -365,6 +471,13 @@ def simulate_parameter_series(rng, drifting_params, severity_mult, directions, d
         ramp_minutes = max(1, duration - onset[key])
         progress = min(1.0, (t - onset[key]) / ramp_minutes)
         return directions[key] * max_deviation * progress
+
+    # Filter DP/Chamber DP get extra correlated drift when Flow Rate/Process
+    # Pressure is this batch's drifting scenario - same idea as the
+    # historical/live ports' filter_extra/chamber_extra, scaled by this
+    # generator's own continuous severity_mult instead of a 3-tier constant.
+    filter_extra = severity_mult * 6.0 if 'flow_rate' in drifting_params else severity_mult * 5.0 if 'process_pressure' in drifting_params else 0.0
+    chamber_extra = severity_mult * 4.0 if 'process_pressure' in drifting_params else 0.0
 
     for t in range(duration + 1):
         common_state += rng.normal(0, COMMON_NOISE_STD) - 0.15 * common_state
@@ -383,6 +496,32 @@ def simulate_parameter_series(rng, drifting_params, severity_mult, directions, d
         series['flow_rate'][t], baseline_series['flow_rate'][t] = flow_rate, flow_base
         series['process_pressure'][t], baseline_series['process_pressure'][t] = process_pressure, pressure_base
         series['temperature'][t], baseline_series['temperature'][t] = temperature, temp_base
+
+        # --- The 8 new parameters ---
+        humidity = min(35.0, max(10.0, 20.0 + noise_step('inlet_air_humidity') + drift_offset('inlet_air_humidity', t)))
+        exhaust_temp = min(70.0, max(20.0, _exhaust_air_temp_baseline(b, t, temperature) + noise_step('exhaust_air_temp') + drift_offset('exhaust_air_temp', t)))
+        bed_temp = min(70.0, max(20.0, _product_bed_temp_baseline(b, t, temperature) + noise_step('product_bed_temp') + drift_offset('product_bed_temp', t)))
+        filter_dp = min(40.0, max(1.0, _filter_dp_baseline(b, t, duration, filter_extra) + noise_step('filter_differential_pressure') + drift_offset('filter_differential_pressure', t)))
+        chamber_dp = min(45.0, max(0.0, _chamber_dp_baseline(t, flow_rate, chamber_extra) + noise_step('chamber_differential_pressure') + drift_offset('chamber_differential_pressure', t)))
+        damper = min(100.0, max(0.0, _damper_baseline(filter_dp) + noise_step('ahu_damper_position') + drift_offset('ahu_damper_position', t)))
+
+        phase_pos = (t + shaker_burst_offset) % BURST_INTERVAL_MINUTES
+        in_burst = phase_pos < BURST_DURATION_MINUTES
+        shaker_base = (2.0 + 6.0 * (1.0 - abs((phase_pos / BURST_DURATION_MINUTES) - 0.5) * 2)) if in_burst else 0.3
+        shaker = max(0.0, shaker_base + rng.normal(0, 0.4) + drift_offset('shaker_vibration_frequency', t))
+        compressed_air = min(7.5, max(4.0, 6.0 - (0.8 if in_burst else 0.0) + rng.normal(0, 0.12) + drift_offset('compressed_air_pressure', t)))
+
+        # Baselines for the 8 new parameters (no drift/noise) - derived from
+        # the CLEAN baseline series for the original 4, so a residual against
+        # them isolates genuine deviation, same principle as the original 4.
+        series['inlet_air_humidity'][t], baseline_series['inlet_air_humidity'][t] = humidity, 20.0
+        series['exhaust_air_temp'][t], baseline_series['exhaust_air_temp'][t] = exhaust_temp, _exhaust_air_temp_baseline(b, t, temp_base)
+        series['product_bed_temp'][t], baseline_series['product_bed_temp'][t] = bed_temp, _product_bed_temp_baseline(b, t, temp_base)
+        series['filter_differential_pressure'][t], baseline_series['filter_differential_pressure'][t] = filter_dp, _filter_dp_baseline(b, t, duration, 0.0)
+        series['chamber_differential_pressure'][t], baseline_series['chamber_differential_pressure'][t] = chamber_dp, _chamber_dp_baseline(t, flow_base, 0.0)
+        series['ahu_damper_position'][t], baseline_series['ahu_damper_position'][t] = damper, _damper_baseline(_filter_dp_baseline(b, t, duration, 0.0))
+        series['shaker_vibration_frequency'][t], baseline_series['shaker_vibration_frequency'][t] = shaker, shaker_base
+        series['compressed_air_pressure'][t], baseline_series['compressed_air_pressure'][t] = compressed_air, 6.0 - (0.8 if in_burst else 0.0)
 
     return series, baseline_series, duration, onset
 
@@ -412,8 +551,10 @@ def _deviation_score_from_residual(key, residual_stats):
     """How far a parameter's RESIDUAL (actual minus its own phase-correct
     baseline) is from zero over some window: 0 = tracking its expected curve
     exactly, ~1 = mean residual at the edge of the normal band, >1 = beyond
-    it. Feeds the KPI formula chain below - not a Normal/Warning/Critical
-    call itself."""
+    it. Feeds the KPI formula chain below for the original 4 - the 8 new
+    parameters' deviation scores are still computed (kept for symmetry /
+    possible future use) but compute_final_kpis deliberately never reads
+    them, per the module docstring's design decision."""
     half_width = _band_half_width(key)
     mean_dev = abs(residual_stats['mean']) / half_width
     spread = residual_stats['std'] / half_width
@@ -439,7 +580,10 @@ def final_deviation_scores(series, baseline_series, onset, duration):
 # generate_batch_kpis.py's real chain (Process Parameters -> Process
 # Stability -> Yield/Energy/Assay -> OEE), fed by the synthetic deviation
 # scores above instead of real measurements. Constants reused directly from
-# that real generator where they're generic to the process, not arbitrary. ---
+# that real generator where they're generic to the process, not arbitrary.
+# Deliberately still keyed to only the original 4 parameters - see module
+# docstring's design decision (no invented KPI-causing relationship for the
+# 8 new ones). ---
 THEORETICAL_OUTPUT_KG = 150.0  # matches the real per-product constant (single product today)
 BASE_ENERGY_KWH = 180.0
 ENERGY_PER_MINUTE_KWH = 0.16
@@ -488,7 +632,9 @@ WEIGHT_COLUMN = 'row_weight'
 def compute_final_kpis(rng, deviation_scores, duration, severity_tier):
     """The full chain: intermediate physical values first (stability_frac,
     actual_output_kg, total_energy_kwh, assay_pct), final KPIs derived FROM
-    those - not computed independently per KPI. See module docstring."""
+    those - not computed independently per KPI. See module docstring. Reads
+    only the original 4 parameters' deviation scores - unchanged from the
+    4-parameter version of this generator."""
     stability_frac = float(np.clip(
         1.0 - np.mean([deviation_scores['temperature'], deviation_scores['process_pressure'], deviation_scores['flow_rate']]),
         0.0, 1.0,
@@ -531,25 +677,6 @@ def compute_final_kpis(rng, deviation_scores, duration, severity_tier):
     }
 
 
-def golden_final_kpis():
-    """The same chain evaluated at zero deviation and nominal duration -
-    i.e. what a batch perfectly tracking its own phase-correct expected
-    curve at every instant, finishing in exactly the nominal duration, would
-    read. Deterministic (no noise draw) - this is the Golden reference the
-    live agent compares its prediction against."""
-    actual_output_kg = THEORETICAL_OUTPUT_KG  # yield_fraction = 1.0
-    total_energy_kwh = BASE_ENERGY_KWH + ENERGY_PER_MINUTE_KWH * NOMINAL_TOTAL_DURATION
-    perf_lo, perf_hi = OEE_PERFORMANCE_RANGES['Normal']
-    oee_performance_pct = (perf_lo + perf_hi) / 2
-    return {
-        'yield_pct_final': 100.0,
-        'quality_score_pct_final': 100.0,
-        'sec_kwh_per_kg_final': round(total_energy_kwh / actual_output_kg, 4),
-        'oee_pct_final': round((100.0 * oee_performance_pct * 100.0) / 10000.0, 3),
-        'total_energy_kwh_final': round(total_energy_kwh, 2),
-    }
-
-
 def build_feature_row(elapsed_minutes, window_by_param):
     row = {'elapsed_minutes': elapsed_minutes}
     for key in PARAMETER_KEYS:
@@ -566,6 +693,25 @@ def build_feature_row(elapsed_minutes, window_by_param):
 FEATURE_COLUMNS = ['elapsed_minutes'] + [
     f'{key}_{stat}' for key in PARAMETER_KEYS for stat in ('current', 'mean_30', 'std_30', 'min_30', 'max_30', 'slope_30')
 ]
+
+
+def write_rows_to_postgres(rows) -> None:
+    columns = ['batch_id', 'scenario', 'split'] + FEATURE_COLUMNS + TARGET_COLUMNS + [WEIGHT_COLUMN]
+    placeholders = ', '.join(['%s'] * len(columns))
+    column_list = ', '.join(columns)
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute('TRUNCATE TABLE synthetic_kpi_training_dataset_12param')
+            batch_values = [tuple(row[col] for col in columns) for row in rows]
+            cur.executemany(f'INSERT INTO synthetic_kpi_training_dataset_12param ({column_list}) VALUES ({placeholders})', batch_values)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def generate():
@@ -623,52 +769,8 @@ def generate():
                 WEIGHT_COLUMN: row_weight,
             })
 
-    fieldnames = ['batch_id', 'scenario', 'split'] + FEATURE_COLUMNS + TARGET_COLUMNS + [WEIGHT_COLUMN]
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with OUT_TRAINING_CSV.open('w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-    with OUT_GOLDEN_JSON.open('w') as f:
-        json.dump(golden_final_kpis(), f, indent=2)
-
-    manifest = {
-        'generation_method_version': GENERATION_METHOD_VERSION,
-        'plant': PLANT,
-        'product': PRODUCT,
-        'description': (
-            'Fully synthetic training data for the KPI Prediction & Deviation Agent, predicting '
-            'each batch\'s FINAL outcome (not a 30-min-ahead snapshot) from the last 30 minutes of '
-            'process parameters available at any point in the batch. Final KPIs are derived through '
-            'the same physical dependency chain as the real historical generator (Process Parameters '
-            '-> Stability -> Yield/Energy/Assay -> OEE), fed by synthetic deviation scores instead of '
-            'real measurements - see this script\'s module docstring for the full rationale.'
-        ),
-        'row_grain': (
-            'many rows per synthetic batch (one per elapsed minute from 30 to the batch\'s end), all '
-            'sharing that batch\'s single final-outcome target - only the input window differs row to row'
-        ),
-        'n_batches': N_BATCHES,
-        'lookback_minutes': LOOKBACK_MINUTES,
-        'feature_columns': FEATURE_COLUMNS,
-        'target_columns': TARGET_COLUMNS,
-        'weight_column': WEIGHT_COLUMN,
-        'weight_column_note': (
-            f'Training weight per row, NOT a model input feature - {AMBIGUOUS_ROW_WEIGHT} for rows sampled '
-            'before any of the batch\'s actual drifting parameters could have started (genuinely '
-            'unpredictable from input alone), 1.0 otherwise. Pass as sample_weight when fitting, do not '
-            'include in feature_columns.'
-        ),
-        'scenarios': scenario_names,
-        'golden_final_json': OUT_GOLDEN_JSON.name,
-    }
-    with OUT_MANIFEST.open('w') as f:
-        json.dump(manifest, f, indent=2)
-
-    print(f'Wrote {len(rows)} rows across {N_BATCHES} synthetic batches -> {OUT_TRAINING_CSV}')
-    print(f'Wrote golden final reference -> {OUT_GOLDEN_JSON}')
-    print(f'Wrote manifest -> {OUT_MANIFEST}')
+    write_rows_to_postgres(rows)
+    print(f'Wrote {len(rows)} rows across {N_BATCHES} synthetic batches -> synthetic_kpi_training_dataset_12param')
 
 
 if __name__ == '__main__':

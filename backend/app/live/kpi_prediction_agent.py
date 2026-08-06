@@ -83,8 +83,12 @@ from app.live import kpi_llm_agent
 from app.live.ml_bridge import compute_live_feature_row
 from app.live.service import get_recent_readings
 
-MODEL_PATH = MODEL_DIR / 'synthetic_kpi_random_forest.joblib'
-MANIFEST_PATH = MODEL_DIR / 'synthetic_kpi_random_forest_manifest.json'
+# Points at the 12-parameter model (scripts/train-synthetic-kpi-model/
+# train_synthetic_kpi_model_12param.py) - the original 4-parameter
+# synthetic_kpi_random_forest.joblib/manifest stay on disk, just
+# unreferenced, so this is a reversible cutover, not a deletion.
+MODEL_PATH = MODEL_DIR / 'synthetic_kpi_random_forest_12param.joblib'
+MANIFEST_PATH = MODEL_DIR / 'synthetic_kpi_random_forest_12param_manifest.json'
 
 KPI_LABELS = {
     'yield_pct': 'Yield',
@@ -405,7 +409,7 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
         for c in calcs
     ]
 
-    # Newest-first, last HISTORY_MINUTES readings - all 4 process parameters,
+    # Newest-first, last HISTORY_MINUTES readings - all 12 process parameters,
     # not just whichever 1-3 are flagged as top contributors above. Same
     # convention as Process Monitoring's own History table.
     history = [
@@ -415,6 +419,14 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
             'process_pressure': r.process_pressure,
             'flow_rate': r.flow_rate,
             'agitator_rpm': r.agitator_rpm,
+            'inlet_air_humidity': r.inlet_air_humidity,
+            'exhaust_air_temp': r.exhaust_air_temp,
+            'filter_differential_pressure': r.filter_differential_pressure,
+            'shaker_vibration_frequency': r.shaker_vibration_frequency,
+            'product_bed_temp': r.product_bed_temp,
+            'chamber_differential_pressure': r.chamber_differential_pressure,
+            'ahu_damper_position': r.ahu_damper_position,
+            'compressed_air_pressure': r.compressed_air_pressure,
         }
         for r in reversed(recent_readings[-HISTORY_MINUTES:])
     ]
