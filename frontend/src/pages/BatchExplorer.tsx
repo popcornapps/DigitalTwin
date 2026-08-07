@@ -115,10 +115,20 @@ export default function BatchExplorer() {
     setActiveKPIId(null);
   };
 
+  // Once a live batch is persisted (history_batch_id set), its real data now
+  // lives in the 'historical' row sharing that same batch_id - the live-
+  // registry copy would just be a blank duplicate (RunningBatchSummary never
+  // carried Yield/Quality/etc.) alongside the real one, so hide it here.
+  // Still-Running or Stopped-and-never-persisted batches are unaffected.
+  const visibleRunningBatches = useMemo(
+    () => runningBatches.filter((b) => b.history_batch_id === null),
+    [runningBatches]
+  );
+
   const allRows: ExplorerRow[] = useMemo(() => [
-    ...runningBatches.map((batch): ExplorerRow => ({ kind: 'live', batch })),
+    ...visibleRunningBatches.map((batch): ExplorerRow => ({ kind: 'live', batch })),
     ...batches.map((batch): ExplorerRow => ({ kind: 'historical', batch })),
-  ], [batches, runningBatches]);
+  ], [batches, visibleRunningBatches]);
 
   const filteredAndSortedRows = useMemo(() => {
     let result = [...allRows];
@@ -179,7 +189,7 @@ export default function BatchExplorer() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Batch Explorer</h1>
           <p className="text-sm text-gray-500">
-            Browsing all {allRows.length} Paracetamol 500mg batches ({batches.length} historical, {runningBatches.length} live)
+            Browsing all {allRows.length} Paracetamol 500mg batches ({batches.length} historical, {visibleRunningBatches.length} live)
           </p>
         </div>
         <div className="flex flex-wrap gap-4 items-center">
@@ -418,6 +428,53 @@ export default function BatchExplorer() {
                   />
                 </div>
               </div>
+
+              {activeKpis && activeKpis.predicted_yield_pct !== null && (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                    Predicted vs. Actual
+                  </h3>
+                  <p className="text-[11px] text-gray-400 -mt-2 mb-3">
+                    The KPI Prediction Agent's last live guess, compared against the real calculated outcome above.
+                  </p>
+                  <table className="w-full text-sm border border-gray-100 rounded-lg overflow-hidden">
+                    <thead>
+                      <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        <th className="px-3 py-2">KPI</th>
+                        <th className="px-3 py-2 text-right">Predicted</th>
+                        <th className="px-3 py-2 text-right">Actual</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr>
+                        <td className="px-3 py-2 text-gray-600">Yield</td>
+                        <td className="px-3 py-2 text-right font-mono">{activeKpis.predicted_yield_pct!.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">{activeKpis.yield_pct.toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-gray-600">Quality Score</td>
+                        <td className="px-3 py-2 text-right font-mono">{activeKpis.predicted_quality_score_pct!.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">{activeKpis.quality_score_pct.toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-gray-600">SEC</td>
+                        <td className="px-3 py-2 text-right font-mono">{activeKpis.predicted_sec_kwh_per_kg!.toFixed(2)} kWh/kg</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">{activeKpis.sec_kwh_per_kg.toFixed(2)} kWh/kg</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-gray-600">OEE</td>
+                        <td className="px-3 py-2 text-right font-mono">{activeKpis.predicted_oee_pct!.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">{activeKpis.oee_pct.toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-gray-600">Total Energy</td>
+                        <td className="px-3 py-2 text-right font-mono">{activeKpis.predicted_total_energy_kwh!.toFixed(0)} kWh</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">{activeKpis.total_energy_kwh.toFixed(0)} kWh</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Process</h3>

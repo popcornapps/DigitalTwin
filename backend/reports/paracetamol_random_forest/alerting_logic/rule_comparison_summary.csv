@@ -1,0 +1,5 @@
+rule,critical_detection,warning_detection,normal_false_alarm,precision,recall,TP,FP,FN,TN
+A: Single prediction crossing limit,100% (2/2),50% (1/2),75% (9/12),0.25,0.75,3,9,1,3
+B: 3 consecutive predictions crossing,100% (2/2),50% (1/2),67% (8/12),0.273,0.75,3,8,1,4
+C: Trend continuously toward limit,100% (2/2),50% (1/2),83% (10/12),0.231,0.75,3,10,1,2
+D: CI-gated crossing (whole 90% interval outside band),100% (2/2),50% (1/2),0% (0/12),1.0,0.75,3,0,1,12

@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, Inbox, TrendingUp, Sparkles, Gauge } from 'lucide-react';
+import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, Inbox, TrendingUp, Gauge } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import BatchExplorer from './pages/BatchExplorer';
 import ProcessMonitoring from './pages/ProcessMonitoring';
 import GoldenBatch from './pages/GoldenBatch';
 import AiCopilot from './pages/AiCopilot';
 import ReviewDesk from './pages/ReviewDesk';
-import DeviationPrediction from './pages/DeviationPrediction';
 import KpiDeviationPrediction from './pages/KpiDeviationPrediction';
 import SettingsPage from './pages/Settings';
 import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterContext';
@@ -37,7 +36,6 @@ function Sidebar() {
     { name: 'Batch Explorer', path: '/batch-explorer', icon: <Database size={20} /> },
     { name: 'Process Monitoring', path: '/process-monitoring', icon: <TrendingUp size={20} /> },
     { name: 'Golden Batch', path: '/golden-batch', icon: <FileText size={20} /> },
-    { name: 'Deviation Prediction', path: '/deviation-prediction', icon: <Sparkles size={20} /> },
     { name: 'KPI Prediction & Deviation', path: '/kpi-deviation-prediction', icon: <Gauge size={20} /> },
     { name: 'AI Review Desk', path: '/review-desk', icon: <Inbox size={20} /> },
     { name: 'AI Copilot', path: '/ai-copilot', icon: <BrainCircuit size={20} /> },
@@ -82,19 +80,13 @@ function Sidebar() {
 }
 
 function Header() {
-  const location = useLocation();
   const {
     selectedPlant, setSelectedPlant,
     selectedProduct, setSelectedProduct,
-    selectedBatch, setSelectedBatch,
-    availableBatches,
     selectedPersona, setSelectedPersona
   } = useFilter();
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  const isDashboard = location.pathname === '/' || location.pathname === '/dashboard';
-
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 select-none">
@@ -232,7 +224,6 @@ function AppContent() {
               <Route path="/batch-explorer" element={<BatchExplorer />} />
               <Route path="/process-monitoring" element={<ProcessMonitoring />} />
               <Route path="/golden-batch" element={<GoldenBatch />} />
-              <Route path="/deviation-prediction" element={<DeviationPrediction />} />
               <Route path="/kpi-deviation-prediction" element={<KpiDeviationPrediction />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/review-desk" element={<ReviewDesk />} />

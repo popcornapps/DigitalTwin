@@ -1,0 +1,61 @@
+{
+  "model_type": "RandomForestRegressor (native multi-output)",
+  "n_estimators": 100,
+  "max_depth": 18,
+  "min_samples_leaf": 10,
+  "random_state": 42,
+  "plant": "Hyderabad Plant",
+  "product": "Paracetamol 500mg",
+  "feature_columns": [
+    "elapsed_minutes",
+    "temperature_current",
+    "temperature_mean_30",
+    "temperature_std_30",
+    "temperature_min_30",
+    "temperature_max_30",
+    "temperature_slope_30",
+    "process_pressure_current",
+    "process_pressure_mean_30",
+    "process_pressure_std_30",
+    "process_pressure_min_30",
+    "process_pressure_max_30",
+    "process_pressure_slope_30",
+    "flow_rate_current",
+    "flow_rate_mean_30",
+    "flow_rate_std_30",
+    "flow_rate_min_30",
+    "flow_rate_max_30",
+    "flow_rate_slope_30",
+    "agitator_rpm_current",
+    "agitator_rpm_mean_30",
+    "agitator_rpm_std_30",
+    "agitator_rpm_min_30",
+    "agitator_rpm_max_30",
+    "agitator_rpm_slope_30"
+  ],
+  "target_columns": [
+    "yield_pct_final",
+    "quality_score_pct_final",
+    "sec_kwh_per_kg_final",
+    "oee_pct_final",
+    "total_energy_kwh_final"
+  ],
+  "test_r2_unweighted": {
+    "yield_pct_final": 0.3,
+    "quality_score_pct_final": 0.2704,
+    "sec_kwh_per_kg_final": 0.2974,
+    "oee_pct_final": 0.2325,
+    "total_energy_kwh_final": 0.2557
+  },
+  "test_r2_weighted": {
+    "yield_pct_final": 0.368,
+    "quality_score_pct_final": 0.3608,
+    "sec_kwh_per_kg_final": 0.4007,
+    "oee_pct_final": 0.3402,
+    "total_energy_kwh_final": 0.3556
+  },
+  "n_train_rows": 187176,
+  "n_test_rows": 46918,
+  "trained_on": "data/synthetic_kpi_training_dataset.csv",
+  "generation_method_version": "v4-realistic-variability"
+}

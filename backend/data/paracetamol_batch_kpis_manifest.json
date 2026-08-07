@@ -1,0 +1,119 @@
+{
+  "generation_method_version": "v2",
+  "row_grain": "one row per batch - completed-batch summary, not a time series",
+  "source_files": [
+    "data/paracetamol_batches.csv",
+    "data/paracetamol_batch_timeseries.csv",
+    "data/paracetamol_parameter_config.csv"
+  ],
+  "columns": {
+    "batch_id": {
+      "provenance": "real",
+      "has_temporal_signal": false,
+      "note": "PK / FK -> batches"
+    },
+    "cycle_time_hrs": {
+      "provenance": "real",
+      "has_temporal_signal": false
+    },
+    "process_stability_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": true,
+      "note": "mean of the three in_control_pct columns below, computed over valid_time_range"
+    },
+    "process_stability_in_control_pct_temperature": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "process_stability_in_control_pct_process_pressure": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "process_stability_in_control_pct_flow_rate": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "golden_batch_similarity_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": true,
+      "note": "mean of the three per-parameter similarity columns below, vs PAR-GOLDEN over the shared valid_time_range window"
+    },
+    "golden_batch_similarity_pct_temperature": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "golden_batch_similarity_pct_process_pressure": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "golden_batch_similarity_pct_flow_rate": {
+      "provenance": "derived",
+      "has_temporal_signal": true
+    },
+    "fault_onset_elapsed_minutes": {
+      "provenance": "derived",
+      "has_temporal_signal": true,
+      "note": "first elapsed_minutes within valid_time_range where any of the 3 drying parameters left its band; NaN if none (Normal batches, or a fault that never crossed the band)"
+    },
+    "theoretical_output_kg": {
+      "provenance": "recipe_constant",
+      "has_temporal_signal": false,
+      "note": "per-product constant, not derived; single product today"
+    },
+    "actual_output_kg": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "theoretical_output_kg * yield_fraction, yield_fraction driven by real process_stability_pct + small seeded noise"
+    },
+    "assay_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "target(100) minus a penalty driven by real process_stability_pct + small seeded noise, checked against the Assay row in parameter_config.csv"
+    },
+    "yield_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "100 * actual_output_kg / theoretical_output_kg - no longer a severity-tiered random draw"
+    },
+    "quality_score_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "distance of assay_pct from target, normalized by 2x the Assay spec half-width - no longer a severity-tiered random draw, but still a proxy pending real CQA lab data (Quality Workbench Tier 3)"
+    },
+    "oee_availability_pct": {
+      "provenance": "derived_proxy",
+      "has_temporal_signal": false,
+      "note": "uses FINAL batch_duration_minutes - not valid as a mid-batch prediction target without reformulation"
+    },
+    "oee_performance_pct": {
+      "provenance": "synthetic",
+      "has_temporal_signal": false,
+      "note": "still the one synthetic OEE input - no equipment throughput/speed data exists to derive it from"
+    },
+    "oee_quality_pct": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "now the same real assay-derived value as quality_score_pct, not an independent process_stability + noise regression"
+    },
+    "oee_pct": {
+      "provenance": "formula",
+      "has_temporal_signal": false,
+      "note": "availability * performance * quality / 10000"
+    },
+    "total_energy_kwh": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "uses FINAL batch_duration_minutes AND real process_stability_pct (instability penalty) - not valid as a mid-batch prediction target without reformulation"
+    },
+    "sec_kwh_per_kg": {
+      "provenance": "derived",
+      "has_temporal_signal": false,
+      "note": "total_energy_kwh / actual_output_kg - both now real/derived, no longer dependent on synthetic yield_pct"
+    },
+    "generation_method_version": {
+      "provenance": "metadata",
+      "has_temporal_signal": false
+    }
+  },
+  "prediction_readiness_note": "This dataset is an end-of-batch summary only - no forecasting labels or rolling/cumulative KPI trajectories are built here. Columns marked has_temporal_signal=true are the ones a future KPI-deterioration-prediction effort could plausibly reshape into a time series (their per-parameter sub-components are stored here specifically to avoid recomputation later); columns marked false are either batch-level constants with no within-batch trajectory (synthetic fields) or derived from a value (final duration) that is only known once the batch has already finished. See docs/batch-kpis-prediction-readiness-review.md for the full analysis."
+}

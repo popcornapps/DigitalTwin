@@ -1,6 +1,16 @@
 .vscode/
 .env
+.DS_Store
+
+# backend/
+.venv/
+__pycache__/
+*.pyc
+backend/data/live_alerts_store.json
+backend/models/*.joblib
+
+# frontend/
 dist/
 node_modules/
-.DS_Store
 tsconfig.tsbuildinfo
+pharmatwin-ui-mockup.html

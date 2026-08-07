@@ -1,0 +1,619 @@
+{
+  "Agitator_BearingWear": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "agitator_rpm"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": -0.095,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": -0.006,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": 0.346,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": 0.878,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      }
+    },
+    "recommended_action": "Inspect agitator bearings for wear; schedule preventive maintenance."
+  },
+  "Agitator_LoadCreep": {
+    "batch_count": 2,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "agitator_rpm"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": -0.087,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": -0.001,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": 0.08,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -1.585,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      }
+    },
+    "recommended_action": "Inspect agitator load/torque; gradual creep suggests material buildup or bearing drag."
+  },
+  "Agitator_OverloadTrip": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "agitator_rpm"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.062,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.001,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -0.049,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -3.707,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      }
+    },
+    "recommended_action": "Check agitator motor overload protection and investigate the cause of excess load."
+  },
+  "Agitator_VfdLock": {
+    "batch_count": 3,
+    "severities_seen": [
+      "Critical",
+      "Warning"
+    ],
+    "primary_parameters": [
+      "agitator_rpm"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.001,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.006,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": 0.216,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -3.26,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      }
+    },
+    "recommended_action": "Check the agitator VFD (variable frequency drive) for a fault or lockout condition."
+  },
+  "Correlated_DryerRestriction": {
+    "batch_count": 10,
+    "severities_seen": [
+      "Critical",
+      "Warning"
+    ],
+    "primary_parameters": [
+      "process_pressure",
+      "flow_rate"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.384,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.101,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "flow_rate": {
+        "mean_deviation": -4.549,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "agitator_rpm": {
+        "mean_deviation": -0.207,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect the dryer air path for restriction - a blockage simultaneously raises pressure and reduces flow."
+  },
+  "FlowRate_DamperMiscalibration": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "flow_rate"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.097,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": -0.004,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": 4.221,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "agitator_rpm": {
+        "mean_deviation": 0.39,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Recalibrate the flow control damper position."
+  },
+  "FlowRate_DuctBlockage": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "flow_rate"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.002,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": -0.003,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -6.43,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "agitator_rpm": {
+        "mean_deviation": -0.659,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect ductwork for blockage or obstruction restricting airflow."
+  },
+  "FlowRate_FanFault": {
+    "batch_count": 3,
+    "severities_seen": [
+      "Critical",
+      "Warning"
+    ],
+    "primary_parameters": [
+      "flow_rate"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.115,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.003,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -8.666,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "agitator_rpm": {
+        "mean_deviation": -1.041,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect the drying air fan for fault or blade damage."
+  },
+  "FlowRate_FilterLoadingDecay": {
+    "batch_count": 2,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "flow_rate"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.02,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.006,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -3.28,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "agitator_rpm": {
+        "mean_deviation": -0.195,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Replace or clean the air filter; progressive loading is restricting flow."
+  },
+  "Pressure_BlowerFluctuation": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.014,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": -0.003,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -0.094,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": 0.951,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Check the blower motor and drive for speed fluctuation or bearing wear."
+  },
+  "Pressure_DamperSticking": {
+    "batch_count": 3,
+    "severities_seen": [
+      "Critical",
+      "Warning"
+    ],
+    "primary_parameters": [
+      "process_pressure"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": -0.026,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.085,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "flow_rate": {
+        "mean_deviation": 0.231,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": 0.707,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect the pressure control damper for mechanical sticking; free up or replace the actuator."
+  },
+  "Pressure_FilterLoading": {
+    "batch_count": 2,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "process_pressure"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 0.015,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": 0.043,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "flow_rate": {
+        "mean_deviation": -0.073,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -1.463,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Check and replace the process filter; loading is restricting normal pressure regulation."
+  },
+  "Pressure_SealLeak": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "process_pressure"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": -0.165,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "process_pressure": {
+        "mean_deviation": -0.138,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "flow_rate": {
+        "mean_deviation": 0.015,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": 0.78,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect seals on the pressure vessel/ductwork for leaks."
+  },
+  "Temperature_HeatExchangerFouling": {
+    "batch_count": 3,
+    "severities_seen": [
+      "Critical",
+      "Warning"
+    ],
+    "primary_parameters": [
+      "temperature"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": -2.563,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "process_pressure": {
+        "mean_deviation": 0.004,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": 0.015,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -0.268,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect and clean the heat exchanger; fouling is reducing heat transfer efficiency."
+  },
+  "Temperature_HeaterFault": {
+    "batch_count": 3,
+    "severities_seen": [
+      "Critical",
+      "Warning"
+    ],
+    "primary_parameters": [
+      "temperature"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 3.865,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "process_pressure": {
+        "mean_deviation": -0.002,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -0.091,
+        "direction": "down",
+        "consistent": false,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": 0.252,
+        "direction": "up",
+        "consistent": false,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Inspect and calibrate the drying heater element; check for a stuck or miscalibrated heating control loop."
+  },
+  "Temperature_PidHunting": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "temperature"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": -0.257,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "process_pressure": {
+        "mean_deviation": -0.005,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": -0.184,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -2.561,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Review PID tuning parameters for the temperature control loop; oscillation suggests unstable tuning."
+  },
+  "Temperature_SensorDrift": {
+    "batch_count": 1,
+    "severities_seen": [
+      "Warning"
+    ],
+    "primary_parameters": [
+      "temperature"
+    ],
+    "signature": {
+      "temperature": {
+        "mean_deviation": 1.305,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": true
+      },
+      "process_pressure": {
+        "mean_deviation": -0.006,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "flow_rate": {
+        "mean_deviation": 0.086,
+        "direction": "up",
+        "consistent": true,
+        "is_signature_parameter": false
+      },
+      "agitator_rpm": {
+        "mean_deviation": -0.512,
+        "direction": "down",
+        "consistent": true,
+        "is_signature_parameter": false
+      }
+    },
+    "recommended_action": "Verify temperature sensor calibration against a reference probe."
+  }
+}
