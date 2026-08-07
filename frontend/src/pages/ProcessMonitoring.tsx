@@ -61,6 +61,12 @@ interface ParamCard {
     // Golden/Dev line above, just shifted forward by the forecast horizon.
     goldenFuture: number | undefined;
     alertLevel: 'Normal' | 'Warning' | 'Critical';
+    // Golden(t+30) +/- data-derived offset AT t+30 - same dynamic-band idea
+    // as the card's own lowerLimit/upperLimit above, just evaluated 30
+    // minutes ahead so the displayed "Predicted Range" matches the same
+    // reference frame the forecast's own alert level is judged against.
+    lowerLimit: number;
+    upperLimit: number;
   };
 }
 
@@ -252,6 +258,7 @@ export default function ProcessMonitoring() {
     const goldenAtLatest = goldenPointAt(latestPoint.elapsed_minutes);
     const envelopeAtLatest = envelopeAt(latestPoint.elapsed_minutes);
     const goldenAt30 = goldenPointAt(latestPoint.elapsed_minutes + 30);
+    const envelopeAt30 = envelopeAt(latestPoint.elapsed_minutes + 30);
 
     return paramConfig.map((cfg) => {
       const current = latestPoint[cfg.key as keyof NormalizedPoint] as number;
@@ -272,6 +279,14 @@ export default function ProcessMonitoring() {
 
       const livePred = runningTelemetry?.prediction?.parameters.find((p) => p.key === cfg.key);
       const goldenFuture = goldenAt30 ? (goldenAt30[cfg.key as keyof typeof goldenAt30] as number) : undefined;
+      const lowerOffset30 = envelopeAt30
+        ? (envelopeAt30[`${cfg.key}_lower_offset` as keyof GoldenEnvelopePoint] as number)
+        : -fallbackHalfWidth;
+      const upperOffset30 = envelopeAt30
+        ? (envelopeAt30[`${cfg.key}_upper_offset` as keyof GoldenEnvelopePoint] as number)
+        : fallbackHalfWidth;
+      const predictedLower = goldenFuture !== undefined ? Math.round((goldenFuture + lowerOffset30) * 100) / 100 : effectiveLower;
+      const predictedUpper = goldenFuture !== undefined ? Math.round((goldenFuture + upperOffset30) * 100) / 100 : effectiveUpper;
       // The "In 30 min" badge uses the Deviation Agent's own predicted_status
       // (dynamic Golden(t+30)+/-Margin(t+30), see deviation_agent.py) rather
       // than livePred.alert_level (the ML's raw fixed-parameter-config-band
@@ -294,7 +309,13 @@ export default function ProcessMonitoring() {
         upperLimit: effectiveUpper,
         status: classifyStatus(current, effectiveLower, effectiveUpper),
         prediction: livePred
-          ? { predicted: livePred.predicted, goldenFuture, alertLevel: dynamicPredictedLevel ?? livePred.alert_level }
+          ? {
+              predicted: livePred.predicted,
+              goldenFuture,
+              alertLevel: dynamicPredictedLevel ?? livePred.alert_level,
+              lowerLimit: predictedLower,
+              upperLimit: predictedUpper,
+            }
           : undefined,
       };
     });
@@ -603,6 +624,27 @@ export default function ProcessMonitoring() {
                 <p className="text-xs text-gray-400 mb-4">
                   The dashed gold line is what an ideal batch looked like at this same point in time.
                 </p>
+                {/* Always rendered here (not inside the Agent Assessment /
+                    "What This Means" panel on the right) so the expected
+                    range stays visible no matter which of those two panels
+                    happens to be showing - the ranges are themselves
+                    time-varying (Golden(t) +/- data-derived margin), so
+                    "Current" and "Predicted" show two different windows in
+                    time, not the same number twice. */}
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 rounded-full px-3 py-1">
+                    Current Range
+                    <span className="font-bold text-gray-800">{activeParamObj.lowerLimit} - {activeParamObj.upperLimit} {activeParamObj.unit}</span>
+                  </span>
+                  {activeParamObj.prediction && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-full px-3 py-1">
+                      Predicted Range
+                      <span className="font-bold text-indigo-800">
+                        {activeParamObj.prediction.lowerLimit} - {activeParamObj.prediction.upperLimit} {activeParamObj.unit}
+                      </span>
+                    </span>
+                  )}
+                </div>
                 <div className="h-80 w-full relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>

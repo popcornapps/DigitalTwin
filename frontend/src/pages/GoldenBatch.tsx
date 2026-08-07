@@ -24,6 +24,17 @@ const CRITICALITY_BY_PARAM: Record<string, string> = {
   process_pressure: 'Critical',
   flow_rate: 'High',
   agitator_rpm: 'Medium',
+  // The 8 parameters added alongside the original 4 - ranked by how directly
+  // each ties to the actual product (drying/moisture/quality) vs. being an
+  // auxiliary/support-system reading.
+  product_bed_temp: 'High',
+  exhaust_air_temp: 'High',
+  filter_differential_pressure: 'Medium',
+  chamber_differential_pressure: 'Medium',
+  ahu_damper_position: 'Medium',
+  inlet_air_humidity: 'Low',
+  shaker_vibration_frequency: 'Low',
+  compressed_air_pressure: 'Low',
 };
 
 const PROCESS_CRITICALITY_TOOLTIP =

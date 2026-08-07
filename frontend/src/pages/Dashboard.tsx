@@ -310,7 +310,7 @@ export default function Dashboard() {
   // Matches backend's MAX_BATCHES_PER_PLANT_PER_DAY (app/live/config.py) -
   // not fetched dynamically, no API exposes it yet; same hardcoded value
   // already shown in the Production Run Summary panel's "Planned runs" card.
-  const plannedBatchesPerDay = 8;
+  const plannedBatchesPerDay = 20;
   const criticalAlertCount = openAlerts?.filter((a) => a.severity === 'Critical').length ?? 0;
 
   // AI insights (Manager persona) - real, driven by the plant KPI rollup,
@@ -585,7 +585,7 @@ export default function Dashboard() {
                   {/* No scheduling/planning concept exists in the backend yet
                       (only completed-historical and currently-running batches)
                       - kept as a placeholder until that data model exists. */}
-                  <div className="font-black text-gray-800 text-base mt-0.5">8</div>
+                  <div className="font-black text-gray-800 text-base mt-0.5">{plannedBatchesPerDay}</div>
                 </div>
                 <div>
                   <div className="text-gray-400 text-xs">Active Shift</div>
