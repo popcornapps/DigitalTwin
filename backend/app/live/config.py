@@ -159,7 +159,7 @@ NOISE_REVERSION_RATE = 0.15
 # whether it was later aborted early). Resets with the in-memory registry
 # (i.e. on process restart), same caveat as the rest of this ephemeral
 # subsystem - see registry.py's own docstring.
-MAX_BATCHES_PER_PLANT_PER_DAY = 8
+MAX_BATCHES_PER_PLANT_PER_DAY = 20
 
 # Default seed batches created once at backend startup - all at the single
 # supported plant (see PLANTS above). Each one names its own drifting_parameter
