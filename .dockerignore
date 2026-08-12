@@ -1,0 +1,26 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+.git
+.claude
+
+frontend/dist
+frontend/.env
+frontend/.env.example
+
+backend/.env
+backend/.env.example
+backend/data/live_alerts_store.json
+backend/reports
+backend/scripts
+
+# Unreferenced legacy models (see Dockerfile) - keeping these out of the
+# build context, not just out of the final image, since 430MB otherwise
+# gets sent to the Docker daemon on every build for no reason.
+backend/models/paracetamol_random_forest.joblib
+backend/models/paracetamol_random_forest_manifest.json
+backend/models/synthetic_kpi_random_forest.joblib
+backend/models/synthetic_kpi_random_forest_manifest.json
+
+*.md

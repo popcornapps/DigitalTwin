@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, Inbox, TrendingUp, Gauge } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
 import Dashboard from './pages/Dashboard';
 import BatchExplorer from './pages/BatchExplorer';
 import ProcessMonitoring from './pages/ProcessMonitoring';
@@ -86,6 +87,16 @@ function Header() {
     selectedPersona, setSelectedPersona
   } = useFilter();
 
+  const { user, logout } = useAuth();
+  const displayName = user?.name ?? user?.email ?? 'Signed in user';
+  const initials = displayName
+    .split(' ')
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'U';
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   return (
@@ -122,10 +133,10 @@ function Header() {
             className="flex items-center gap-2 hover:bg-gray-50 p-1.5 rounded-lg border border-transparent hover:border-gray-200 transition-all focus:outline-none shadow-sm"
           >
             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shadow-inner">
-              JD
+              {initials}
             </div>
             <div className="text-left hidden md:block select-none">
-              <div className="text-xs font-bold text-gray-800 leading-tight">J. Doe</div>
+              <div className="text-xs font-bold text-gray-800 leading-tight">{displayName}</div>
               <div className="text-[11.25px] font-semibold text-blue-600 mt-0.5 flex items-center gap-1">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 {selectedPersona}
@@ -147,7 +158,7 @@ function Header() {
               <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2 animate-fade-in-dropdown select-none">
                 <div className="px-4 py-2 border-b border-gray-100 mb-1.5">
                   <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block">Active Profile</span>
-                  <span className="text-sm font-extrabold text-gray-800 block mt-0.5">J. Doe</span>
+                  <span className="text-sm font-extrabold text-gray-800 block mt-0.5">{displayName}</span>
                   <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-[11.25px] px-2 py-0.5 rounded-full font-bold mt-1.5">
                     {selectedPersona}
                   </span>
@@ -179,6 +190,14 @@ function Header() {
                     </li>
                   ))}
                 </ul>
+                <div className="border-t border-gray-100 mt-1.5 pt-1.5">
+                  <button
+                    onClick={logout}
+                    className="w-full text-left px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    Sign out
+                  </button>
+                </div>
               </div>
             </>
           )}

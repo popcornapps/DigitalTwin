@@ -1,13 +1,18 @@
 // Client for the FastAPI backend (backend/app) - replaces the old static
 // deviationPredictionSnapshot.ts data source with live model-driven calls.
-const API_BASE_URL = 'http://localhost:8000/api';
+
+// Falls back to the local-dev default if VITE_API_BASE_URL isn't set (e.g.
+// a checkout without a .env yet) - see .env.example.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export class ApiError extends Error {}
 
+// Every route under API_BASE_URL is gated by a session cookie on the
+// backend (app/main.py, app/auth.py) - 'include' sends it along.
 async function fetchJson<T>(path: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`);
+    response = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include' });
   } catch {
     throw new ApiError('Could not reach the prediction API. Is the backend running? (.venv/bin/uvicorn app.main:app --port 8000, from backend/)');
   }
@@ -25,6 +30,7 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
+      credentials: 'include',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
