@@ -4,7 +4,11 @@
 # works with no cross-origin/proxy configuration needed in production.
 
 # ---------- Frontend build ----------
-FROM node:20-alpine AS frontend-build
+# Pinned to the build machine's own platform (not the final target) - the
+# output is just static JS/CSS/HTML, so it's platform-independent, and
+# running esbuild under QEMU emulation for a cross-platform build is flaky
+# (crashes with "The service was stopped").
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
