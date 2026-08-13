@@ -45,7 +45,7 @@ function KpiCard({ label, value, icon, color, onClick, hint }: { label: string; 
         <div className={`p-2 rounded-lg ${color}`}>{icon}</div>
         <span className="text-lg font-bold text-gray-900">{value}</span>
       </div>
-      {hint && <span className="text-[11.25px] font-semibold text-indigo-400 mt-2">{hint}</span>}
+      {hint && <span className="text-2xs font-semibold text-indigo-400 mt-2">{hint}</span>}
     </Tag>
   );
 }
@@ -255,6 +255,7 @@ export default function BatchExplorer() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-sm text-gray-600">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-700 uppercase">
             <tr>
@@ -345,6 +346,7 @@ export default function BatchExplorer() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {activeBatch && createPortal(
@@ -434,7 +436,7 @@ export default function BatchExplorer() {
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                     Predicted vs. Actual
                   </h3>
-                  <p className="text-[11px] text-gray-400 -mt-2 mb-3">
+                  <p className="text-2xs text-gray-400 -mt-2 mb-3">
                     The KPI Prediction Agent's last live guess, compared against the real calculated outcome above.
                   </p>
                   <table className="w-full text-sm border border-gray-100 rounded-lg overflow-hidden">

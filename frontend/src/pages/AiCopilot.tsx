@@ -23,12 +23,12 @@ export default function AiCopilot() {
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
            <Cpu className="text-blue-600" /> AI Manufacturing Copilot
         </h1>
-        <div className="flex items-center gap-2 mt-1.5">
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
            <p className="text-sm text-gray-500">Natural Language to Manufacturing Insights for</p>
            <select
              value={localBatch}
              onChange={(e) => setLocalBatch(e.target.value)}
-             className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+             className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded font-medium px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[10rem] sm:max-w-none"
            >
              {availableBatches.map(b => (
                <option key={b} value={b}>{b}</option>
@@ -47,7 +47,7 @@ export default function AiCopilot() {
                         <Bot size={18} />
                      </div>
                   )}
-                  <div className={`px-5 py-3.5 rounded-2xl max-w-[75%] whitespace-pre-wrap text-sm leading-relaxed ${
+                  <div className={`px-5 py-3.5 rounded-2xl max-w-[85%] sm:max-w-[75%] whitespace-pre-wrap text-sm leading-relaxed ${
                      chat.sender === 'user' ? 'bg-blue-600 text-white rounded-br-sm shadow-sm' : 'bg-gray-50 text-gray-800 border border-gray-100 rounded-bl-sm shadow-sm'
                   }`}>
                      {chat.text}

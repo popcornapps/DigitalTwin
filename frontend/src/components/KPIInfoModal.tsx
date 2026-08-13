@@ -40,11 +40,11 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
         <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-start bg-gray-50 shrink-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getCategoryColor(kpiDefinition.category)}`}>
+              <span className={`inline-flex px-2.5 py-0.5 rounded-full text-2xs font-bold uppercase tracking-wider border ${getCategoryColor(kpiDefinition.category)}`}>
                 {kpiDefinition.category}
               </span>
               {currentValue && (
-                <span className="inline-flex px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-gray-900 text-white">
+                <span className="inline-flex px-2.5 py-0.5 rounded-full text-2xs font-bold bg-gray-900 text-white">
                   Current: {currentValue}
                 </span>
               )}
@@ -68,14 +68,14 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
           {/* 2. Formula */}
           {!hideFormula && (
             <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
-              <h3 className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mb-1.5">Formula</h3>
+              <h3 className="text-2xs font-bold text-indigo-600 uppercase tracking-widest mb-1.5">Formula</h3>
               <code className="text-sm font-mono font-semibold text-indigo-900 block">{kpiDefinition.formula}</code>
             </div>
           )}
 
           {/* 3. Current Batch Calculation (falls back to a generic example if no batch is selected) */}
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">{calcLabel}</h3>
+            <h3 className="text-2xs font-bold text-slate-500 uppercase tracking-widest mb-2">{calcLabel}</h3>
             <div className="space-y-1 mb-2">
               {calc.inputs.map((input, idx) => (
                 <div key={idx} className="flex justify-between gap-3 text-xs">
@@ -92,7 +92,7 @@ export function KPIInfoModal({ kpiDefinition, currentValue, currentCalculation, 
 
           {/* 4. Industry Benchmark */}
           <div className="bg-purple-50 border border-purple-100 rounded-lg p-3">
-            <h3 className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-1">Industry Benchmark</h3>
+            <h3 className="text-2xs font-bold text-purple-600 uppercase tracking-widest mb-1">Industry Benchmark</h3>
             <p className="text-sm font-semibold text-gray-900">{kpiDefinition.benchmarkRange}</p>
           </div>
 

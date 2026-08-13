@@ -247,7 +247,7 @@ export default function KpiDeviationPrediction() {
         {/* Global switch (backend/app/live/ai_mode.py) - shared with Process
             Monitoring's own toggle, not a separate setting. */}
         <div className="flex flex-col items-end self-start">
-          <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-wider mb-1">AI Analysis Mode</span>
+          <span className="text-2xs font-bold text-gray-400 uppercase tracking-wider mb-1">AI Analysis Mode</span>
           <div className="flex items-center gap-2">
             <span className={`text-xs font-semibold transition-colors ${aiMode === 'static' ? 'text-gray-700' : 'text-gray-400'}`}>Static</span>
             <button
@@ -293,7 +293,7 @@ export default function KpiDeviationPrediction() {
 
       {prediction && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-4">
             {KPI_ORDER.map((key) => {
               const kpi = prediction.kpis.find((k) => k.key === key);
               if (!kpi) return null;
@@ -308,14 +308,14 @@ export default function KpiDeviationPrediction() {
                     isSelected ? 'border-blue-500 ring-2 ring-blue-50' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-start justify-between gap-2 mb-2">
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">{kpi.label}</span>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11.25px] font-bold border ${STATUS_BADGE[kpi.status]}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-bold border shrink-0 whitespace-nowrap ${STATUS_BADGE[kpi.status]}`}>
                       <Icon size={11} />
                       {STATUS_LABEL[kpi.status]}
                     </span>
                   </div>
-                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">Predicted</span>
+                  <span className="text-2xs font-bold text-gray-400 uppercase tracking-wider">Predicted</span>
                   <p className="text-2xl font-bold text-gray-900">
                     {kpi.predicted_final.toFixed(decimals)}
                     <span className="text-sm font-medium text-gray-400 ml-1">{kpi.unit}</span>
@@ -339,7 +339,7 @@ export default function KpiDeviationPrediction() {
                     <h2 className="text-lg font-bold text-gray-900">{selectedKpi.label} - Final Outcome Investigation</h2>
                     <span
                       title="Applies to the summary, explanation, recommendation, and impact below - all generated together in one pass"
-                      className={`px-2 py-0.5 rounded-full text-[11.25px] font-bold ${
+                      className={`px-2 py-0.5 rounded-full text-2xs font-bold ${
                         selectedKpi.reasoning_source === 'llm' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-600'
                       }`}
                     >
@@ -353,11 +353,11 @@ export default function KpiDeviationPrediction() {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right max-w-[220px]">
-                    <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-wider block">Forecast Confidence</span>
+                    <span className="text-2xs font-bold text-gray-400 uppercase tracking-wider block">Forecast Confidence</span>
                     <span className={`text-sm font-bold ${CONFIDENCE_STYLE[selectedKpi.confidence]}`}>{selectedKpi.confidence}</span>
-                    <p className="text-[12.38px] text-gray-500 leading-snug mt-0.5">{selectedKpi.confidence_reason}</p>
+                    <p className="text-2xs text-gray-500 leading-snug mt-0.5">{selectedKpi.confidence_reason}</p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-[11.25px] font-bold ${URGENCY_STYLE[selectedKpi.urgency]}`}>
+                  <span className={`px-2.5 py-1 rounded-full text-2xs font-bold ${URGENCY_STYLE[selectedKpi.urgency]}`}>
                     {selectedKpi.urgency}
                   </span>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${STATUS_BADGE[selectedKpi.status]}`}>
@@ -386,7 +386,7 @@ export default function KpiDeviationPrediction() {
                         <p className="text-xs text-gray-500 mt-1">
                           Actual: {p.current}{p.unit} vs Golden Batch: {p.golden}{p.unit}
                         </p>
-                        <p className="text-[11.25px] text-gray-400 mt-1">Deviation score: {p.deviation_score}</p>
+                        <p className="text-2xs text-gray-400 mt-1">Deviation score: {p.deviation_score}</p>
                       </div>
                     ))}
                   </div>
@@ -407,7 +407,7 @@ export default function KpiDeviationPrediction() {
                     <div className="overflow-auto max-h-64">
                       <table className="w-full text-xs border-collapse">
                         <thead>
-                          <tr className="text-gray-400 text-[11.25px] uppercase tracking-wide bg-gray-50">
+                          <tr className="text-gray-400 text-2xs uppercase tracking-wide bg-gray-50">
                             <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-gray-50">Min</th>
                             <th className="text-right font-semibold px-3 py-2">Temperature (°C)</th>
                             <th className="text-right font-semibold px-3 py-2">Pressure (bar)</th>

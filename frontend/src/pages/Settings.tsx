@@ -155,20 +155,20 @@ export default function Settings() {
         ) : (
           <div className="space-y-2">
             {runningBatches.map((b) => (
-              <div key={b.running_batch_id} className="flex items-center justify-between border border-gray-100 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-gray-800">{b.running_batch_id}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[11.25px] font-bold border ${STATUS_BADGE[b.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+              <div key={b.running_batch_id} className="flex items-center justify-between flex-wrap gap-y-2 border border-gray-100 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-3 flex-wrap min-w-0">
+                  <span className="text-sm font-semibold text-gray-800 truncate max-w-[10rem]">{b.running_batch_id}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border shrink-0 ${STATUS_BADGE[b.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                     {b.status}
                   </span>
-                  <span className="text-xs text-gray-500">{b.scenario_profile}{b.drifting_parameter ? ` · ${b.drifting_parameter}` : ''}</span>
-                  <span className="text-xs text-gray-400">{b.elapsed_minutes} / {b.target_duration_minutes} min</span>
+                  <span className="text-xs text-gray-500 truncate max-w-[12rem]">{b.scenario_profile}{b.drifting_parameter ? ` · ${b.drifting_parameter}` : ''}</span>
+                  <span className="text-xs text-gray-400 shrink-0">{b.elapsed_minutes} / {b.target_duration_minutes} min</span>
                 </div>
                 {b.status === 'Running' && (
                   <button
                     onClick={() => handleStop(b.running_batch_id)}
                     disabled={stoppingId === b.running_batch_id}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors disabled:opacity-50 shrink-0"
                   >
                     <Square size={12} /> Stop
                   </button>

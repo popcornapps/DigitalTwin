@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, Inbox, TrendingUp, Gauge } from 'lucide-react';
+import { Search, Bell, Activity, FileText, Settings, Database, BrainCircuit, BarChart3, Inbox, TrendingUp, Gauge, Menu, X } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import Dashboard from './pages/Dashboard';
 import BatchExplorer from './pages/BatchExplorer';
@@ -27,19 +27,19 @@ export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages
   }
 };
 
-function Sidebar() {
+function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const location = useLocation();
   const { selectedPersona } = useFilter();
   const isActive = (path: string) => location.pathname === path || (path === '/dashboard' && location.pathname === '/');
 
   const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: <BarChart3 size={20} /> },
-    { name: 'Batch Explorer', path: '/batch-explorer', icon: <Database size={20} /> },
-    { name: 'Process Monitoring', path: '/process-monitoring', icon: <TrendingUp size={20} /> },
-    { name: 'Golden Batch', path: '/golden-batch', icon: <FileText size={20} /> },
-    { name: 'KPI Prediction & Deviation', path: '/kpi-deviation-prediction', icon: <Gauge size={20} /> },
-    { name: 'AI Review Desk', path: '/review-desk', icon: <Inbox size={20} /> },
-    { name: 'AI Copilot', path: '/ai-copilot', icon: <BrainCircuit size={20} /> },
+    { name: 'Dashboard', path: '/dashboard', icon: <BarChart3 size={20} className="shrink-0" /> },
+    { name: 'Batch Explorer', path: '/batch-explorer', icon: <Database size={20} className="shrink-0" /> },
+    { name: 'Process Monitoring', path: '/process-monitoring', icon: <TrendingUp size={20} className="shrink-0" /> },
+    { name: 'Golden Batch', path: '/golden-batch', icon: <FileText size={20} className="shrink-0" /> },
+    { name: 'KPI Prediction & Deviation', path: '/kpi-deviation-prediction', icon: <Gauge size={20} className="shrink-0" /> },
+    { name: 'AI Review Desk', path: '/review-desk', icon: <Inbox size={20} className="shrink-0" /> },
+    { name: 'AI Copilot', path: '/ai-copilot', icon: <BrainCircuit size={20} className="shrink-0" /> },
   ];
 
   const allowedPages = PERSONA_CONFIGS[selectedPersona]?.visiblePages || [];
@@ -48,39 +48,57 @@ function Sidebar() {
   const showSettings = allowedPages.includes('/settings');
 
   return (
-    <nav className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
-      <div className="h-16 flex items-center px-6 border-b border-gray-200">
-        <Activity className="text-blue-600 mr-3" size={24} />
-        <h2 className="text-lg font-bold text-gray-900 tracking-tight">PharmaTwin</h2>
-      </div>
-      <ul className="flex-1 py-4 space-y-1">
-        {filteredNavItems.map((item) => (
-          <li key={item.path}>
-            <Link
-              to={item.path}
-              className={`flex items-center gap-3 px-6 py-2.5 text-sm font-medium transition-colors ${isActive(item.path)
-                  ? 'text-blue-600 bg-blue-50 border-r-4 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-r-4 border-transparent'
-                }`}
-            >
-              {item.icon}
-              {item.name}
-            </Link>
-          </li>
-        ))}
-      </ul>
-      {showSettings && (
-        <div className="p-4 border-t border-gray-200">
-          <Link to="/settings" className={`flex items-center gap-3 px-2 py-2 text-sm font-medium transition-colors ${location.pathname === '/settings' ? 'text-blue-600 font-bold' : 'text-gray-600 hover:text-gray-900'}`}>
-            <Settings size={20} /> Settings
-          </Link>
-        </div>
+    <>
+      {/* Below lg:, the sidebar overlays content instead of pushing it - this
+          backdrop closes it on outside-click, matching the pattern already
+          used for the persona dropdown in Header. */}
+      {open && (
+        <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={onClose} />
       )}
-    </nav>
+      <nav
+        className={`w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200">
+          <div className="flex items-center min-w-0">
+            <Activity className="text-blue-600 mr-3 shrink-0" size={24} />
+            <h2 className="text-lg font-bold text-gray-900 tracking-tight truncate">PharmaTwin</h2>
+          </div>
+          <button onClick={onClose} className="lg:hidden text-gray-400 hover:text-gray-600 shrink-0" aria-label="Close menu">
+            <X size={20} />
+          </button>
+        </div>
+        <ul className="flex-1 py-4 space-y-1 overflow-y-auto">
+          {filteredNavItems.map((item) => (
+            <li key={item.path}>
+              <Link
+                to={item.path}
+                onClick={onClose}
+                className={`flex items-center gap-3 px-6 py-2.5 text-sm font-medium transition-colors min-w-0 ${isActive(item.path)
+                    ? 'text-blue-600 bg-blue-50 border-r-4 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-r-4 border-transparent'
+                  }`}
+              >
+                {item.icon}
+                <span className="truncate">{item.name}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        {showSettings && (
+          <div className="p-4 border-t border-gray-200">
+            <Link to="/settings" onClick={onClose} className={`flex items-center gap-3 px-2 py-2 text-sm font-medium transition-colors min-w-0 ${location.pathname === '/settings' ? 'text-blue-600 font-bold' : 'text-gray-600 hover:text-gray-900'}`}>
+              <Settings size={20} className="shrink-0" /> <span className="truncate">Settings</span>
+            </Link>
+          </div>
+        )}
+      </nav>
+    </>
   );
 }
 
-function Header() {
+function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const {
     selectedPlant, setSelectedPlant,
     selectedProduct, setSelectedProduct,
@@ -100,56 +118,51 @@ function Header() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 select-none">
-      <div className="flex gap-4">
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 shrink-0 select-none gap-2">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+        <button onClick={onMenuClick} className="lg:hidden text-gray-500 hover:text-gray-700 shrink-0 p-1" aria-label="Open menu">
+          <Menu size={22} />
+        </button>
         <select
           value={selectedPlant}
           onChange={(e) => setSelectedPlant(e.target.value)}
-          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer min-w-0 max-w-[9rem] sm:max-w-none"
         >
           {PLANTS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <select
           value={selectedProduct}
           onChange={(e) => setSelectedProduct(e.target.value)}
-          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          className="bg-gray-50 border border-gray-200 text-sm text-gray-700 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer min-w-0 max-w-[9rem] sm:max-w-none hidden sm:block"
         >
           {PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
       </div>
-      <div className="flex items-center gap-6">
-        <div className="flex items-center bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
-          <Search size={16} className="text-gray-400 mr-2" />
-          <input type="text" placeholder="Search..." className="bg-transparent border-none text-sm outline-none text-gray-700 placeholder-gray-400 w-48" />
+      <div className="flex items-center gap-3 sm:gap-6 shrink-0">
+        <div className="hidden md:flex items-center bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 focus-within:ring-2 focus-within:ring-blue-500">
+          <Search size={16} className="text-gray-400 mr-2 shrink-0" />
+          <input type="text" placeholder="Search..." className="bg-transparent border-none text-sm outline-none text-gray-700 placeholder-gray-400 w-32 lg:w-48" />
         </div>
-        <button className="text-gray-400 hover:text-gray-600 relative">
+        <button className="text-gray-400 hover:text-gray-600 relative shrink-0">
           <Bell size={20} />
           <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
         </button>
-        
-        <div className="relative">
+
+        <div className="relative min-w-0">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 hover:bg-gray-50 p-1.5 rounded-lg border border-transparent hover:border-gray-200 transition-all focus:outline-none shadow-sm"
+            className="flex items-center gap-2 hover:bg-gray-50 p-1.5 rounded-lg border border-transparent hover:border-gray-200 transition-all focus:outline-none shadow-sm max-w-[12rem] md:max-w-[14rem]"
           >
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shadow-inner">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm shadow-inner shrink-0">
               {initials}
             </div>
-            <div className="text-left hidden md:block select-none">
-              <div className="text-xs font-bold text-gray-800 leading-tight">{displayName}</div>
-              <div className="text-[11.25px] font-semibold text-blue-600 mt-0.5 flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                {selectedPersona}
+            <div className="text-left hidden md:block select-none min-w-0">
+              <div className="text-xs font-bold text-gray-800 leading-tight truncate">{displayName}</div>
+              <div className="text-2xs font-semibold text-blue-600 mt-0.5 flex items-center gap-1 min-w-0">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span className="truncate">{selectedPersona}</span>
               </div>
             </div>
-            <svg
-              className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-250 ml-0.5 ${dropdownOpen ? 'rotate-180' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 9l-7 7-7-7" />
-            </svg>
           </button>
 
           {dropdownOpen && (
@@ -157,13 +170,13 @@ function Header() {
               <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
               <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2 animate-fade-in-dropdown select-none">
                 <div className="px-4 py-2 border-b border-gray-100 mb-1.5">
-                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block">Active Profile</span>
-                  <span className="text-sm font-extrabold text-gray-800 block mt-0.5">{displayName}</span>
-                  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-[11.25px] px-2 py-0.5 rounded-full font-bold mt-1.5">
+                  <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block">Active Profile</span>
+                  <span className="text-sm font-extrabold text-gray-800 block mt-0.5 truncate">{displayName}</span>
+                  <span className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 text-2xs px-2 py-0.5 rounded-full font-bold mt-1.5">
                     {selectedPersona}
                   </span>
                 </div>
-                <div className="px-4 py-1 text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">
+                <div className="px-4 py-1 text-2xs font-bold text-gray-400 uppercase tracking-wider">
                   Switch Persona
                 </div>
                 <ul className="space-y-0.5 mt-1">
@@ -211,6 +224,13 @@ function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
   const { selectedPersona } = useFilter();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close the mobile sidebar automatically on navigation - avoids it staying
+  // open over the newly-loaded page after tapping a nav link.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     const config = PERSONA_CONFIGS[selectedPersona];
@@ -232,10 +252,10 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-full bg-gray-50 font-sans overflow-hidden">
-      <Sidebar />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
+        <Header onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div key={selectedPersona} className="animate-fade-in-content h-full">
             <Routes>
               <Route path="/" element={<Dashboard />} />

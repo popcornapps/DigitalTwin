@@ -494,7 +494,7 @@ export default function ProcessMonitoring() {
               Critical deviations. In production this toggle would be
               hidden/removed and the mode set once via config instead. */}
           <div className="flex flex-col items-end">
-            <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-wider mb-1">AI Analysis Mode</span>
+            <span className="text-2xs font-bold text-gray-400 uppercase tracking-wider mb-1">AI Analysis Mode</span>
             <div className="flex items-center gap-2">
               <span className={`text-xs font-semibold transition-colors ${aiMode === 'static' ? 'text-gray-700' : 'text-gray-400'}`}>Static</span>
               <button
@@ -567,11 +567,11 @@ export default function ProcessMonitoring() {
                 isSelected ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-gray-200 hover:border-indigo-200'
               }`}
             >
-              <div className="flex justify-between items-start mb-1">
-                <span className="text-sm font-medium text-gray-500">{param.label}</span>
-                <span className={`w-3 h-3 rounded-full ${STATUS_DOT[param.status]}`}></span>
+              <div className="flex justify-between items-start mb-1 gap-2 min-w-0">
+                <span className="text-sm font-medium text-gray-500 truncate">{param.label}</span>
+                <span className={`w-3 h-3 rounded-full shrink-0 ${STATUS_DOT[param.status]}`}></span>
               </div>
-              <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">Actual</span>
+              <span className="text-2xs font-bold text-gray-400 uppercase tracking-wider">Actual</span>
               <div className="text-2xl font-bold text-gray-900">{param.current} {param.unit}</div>
               <div className="mt-2 text-sm text-gray-500 flex justify-between">
                 <span>Golden Batch: {param.golden}</span>
@@ -582,7 +582,7 @@ export default function ProcessMonitoring() {
 
               {param.prediction ? (
                 <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-                  <span className="text-[12.38px] text-gray-500 font-medium flex items-center gap-1 shrink-0">
+                  <span className="text-2xs text-gray-500 font-medium flex items-center gap-1 shrink-0">
                     {param.prediction.predicted > param.current
                       ? <ArrowUp size={12} className="text-rose-500" />
                       : param.prediction.predicted < param.current
@@ -590,14 +590,14 @@ export default function ProcessMonitoring() {
                       : <Minus size={12} className="text-gray-400" />}
                     Predicted (30 min)
                   </span>
-                  <span className="text-sm font-bold text-gray-800">{param.prediction.predicted} {param.unit}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[11.25px] font-bold border shrink-0 ${PREDICTED_ALERT_BADGE[param.prediction.alertLevel]}`}>
+                  <span className="text-sm font-bold text-gray-800 shrink-0">{param.prediction.predicted} {param.unit}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-2xs font-bold border shrink-0 ${PREDICTED_ALERT_BADGE[param.prediction.alertLevel]}`}>
                     {param.prediction.alertLevel}
                   </span>
                 </div>
               ) : (
                 <div className="mt-3 pt-3 border-t border-gray-100">
-                  <span className="text-[11.25px] text-gray-400 italic">
+                  <span className="text-2xs text-gray-400 italic">
                     Forecast available once 30 min of history exist ({selectedRunningBatch?.elapsed_minutes ?? 0}/30 min)
                   </span>
                 </div>
@@ -608,7 +608,7 @@ export default function ProcessMonitoring() {
         </div>
 
         {activeParamObj && (
-          <div ref={detailSectionRef} className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          <div ref={detailSectionRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 flex flex-col">
                 <div className="flex justify-between items-center mb-2">
@@ -677,7 +677,7 @@ export default function ProcessMonitoring() {
                   <div className="overflow-y-auto max-h-72">
                     <table className="w-full text-xs border-collapse">
                       <thead>
-                        <tr className="text-gray-400 text-[11.25px] uppercase tracking-wide">
+                        <tr className="text-gray-400 text-2xs uppercase tracking-wide">
                           <th className="text-left font-semibold px-1.5 py-1">Min</th>
                           {paramConfig.map((cfg) => (
                             <th key={cfg.key} className="text-right font-semibold px-1.5 py-1">{cfg.label}</th>
@@ -721,7 +721,7 @@ export default function ProcessMonitoring() {
                   {showTechnicalDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
                 {showTechnicalDetails && (
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-gray-100">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mt-4 pt-4 border-t border-gray-100">
                     <div className="bg-gray-50 border border-gray-100 p-3 rounded-lg flex flex-col items-center justify-center">
                       <span className="text-xs text-gray-500 mb-1">Average</span>
                       <span className="font-semibold text-gray-900">{stats.avg}</span>
@@ -763,7 +763,7 @@ export default function ProcessMonitoring() {
 
                 {activeAssessment.trigger_type && (
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="text-[12.38px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-block">
+                    <span className="text-2xs font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 border border-indigo-100 rounded px-2 py-1 inline-block">
                       {TRIGGER_LABEL[activeAssessment.trigger_type]}
                     </span>
                     {/* Both modes render this panel identically otherwise -
@@ -775,7 +775,7 @@ export default function ProcessMonitoring() {
                         title={activeAssessment.reasoning_source === 'llm'
                           ? 'This explanation was generated by the real AI agent (Azure OpenAI).'
                           : 'This explanation is a deterministic template, not AI-generated.'}
-                        className={`text-[12.38px] font-bold uppercase tracking-wider rounded px-2 py-1 inline-flex items-center gap-1 border ${
+                        className={`text-2xs font-bold uppercase tracking-wider rounded px-2 py-1 inline-flex items-center gap-1 border ${
                           activeAssessment.reasoning_source === 'llm'
                             ? 'text-purple-700 bg-purple-50 border-purple-100'
                             : 'text-gray-500 bg-gray-100 border-gray-200'

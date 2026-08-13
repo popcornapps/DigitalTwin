@@ -231,7 +231,7 @@ export default function ReviewDesk() {
       <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-2 border-b border-gray-200 pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[11.25px] font-extrabold uppercase bg-indigo-50 text-indigo-600 border border-indigo-200 tracking-wider">
+            <span className="px-2 py-0.5 rounded text-2xs font-extrabold uppercase bg-indigo-50 text-indigo-600 border border-indigo-200 tracking-wider">
               AI Inbox
             </span>
           </div>
@@ -253,7 +253,7 @@ export default function ReviewDesk() {
       </div>
 
       {/* KPI Cards Row - now the primary filter control, click to filter the log below */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
         <KPICard
           title="New" value={kpiNew} icon={<Zap />} color="text-indigo-600" bg="bg-indigo-50"
           isActive={activeCardFilter === 'New'} onClick={() => toggleCardFilter('New')}
@@ -317,7 +317,7 @@ export default function ReviewDesk() {
             </h2>
             <div className="flex items-center gap-3">
               {activeCardFilter && (
-                <span className="text-[12.38px] font-bold text-gray-500">
+                <span className="text-2xs font-bold text-gray-500">
                   Showing: {CARD_LABELS[activeCardFilter]}
                   <button
                     onClick={() => setActiveCardFilter(null)}
@@ -327,7 +327,7 @@ export default function ReviewDesk() {
                   </button>
                 </span>
               )}
-              <span className="text-[11.25px] font-bold text-gray-400">
+              <span className="text-2xs font-bold text-gray-400">
                 {filteredRecs.length} items
                 {!activeCardFilter && recommendations.length > visibleRecs.length && (
                   <span className="font-semibold normal-case text-gray-400"> · {recommendations.length - visibleRecs.length} older in History</span>
@@ -340,11 +340,11 @@ export default function ReviewDesk() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-400">
-                  <th className="px-5 py-3 text-[11.25px] font-bold uppercase tracking-wider">ID & Time</th>
-                  <th className="px-4 py-3 text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">Title & Source</th>
-                  <th className="px-4 py-3 text-[11.25px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch ID</th>
-                  <th className="px-4 py-3 text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">Priority</th>
-                  <th className="px-4 py-3 text-[11.25px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="px-5 py-3 text-2xs font-bold uppercase tracking-wider">ID & Time</th>
+                  <th className="px-4 py-3 text-2xs font-bold text-gray-400 uppercase tracking-wider">Title & Source</th>
+                  <th className="px-4 py-3 text-2xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch ID</th>
+                  <th className="px-4 py-3 text-2xs font-bold text-gray-400 uppercase tracking-wider">Priority</th>
+                  <th className="px-4 py-3 text-2xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -369,23 +369,23 @@ export default function ReviewDesk() {
                       >
                         <td className="px-5 py-4 align-top whitespace-nowrap">
                           <div className={`text-xs font-black ${isActive ? 'text-indigo-600' : 'text-gray-700'}`}>{rec.id}</div>
-                          <div className="text-[11.25px] text-gray-400 font-bold mt-0.5">{rec.timestamp}</div>
+                          <div className="text-2xs text-gray-400 font-bold mt-0.5">{rec.timestamp}</div>
                         </td>
                         <td className="px-4 py-4 align-top">
                           <div className="flex items-center gap-2">
                             <div className="text-sm font-bold text-gray-800">{rec.title}</div>
                             {rec.priority === 'Critical' && rec.status === 'New' && (
-                              <span className="inline-flex px-1.5 py-0.5 rounded text-[10.13px] font-black uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200">
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-2xs font-black uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200">
                                 Critical
                               </span>
                             )}
                             {isOverdue(rec) && (
-                              <span className="inline-flex px-1.5 py-0.5 rounded text-[10.13px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-2xs font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200">
                                 Overdue
                               </span>
                             )}
                           </div>
-                          <div className="text-[11.25px] text-gray-500 font-bold mt-1 max-w-[225px] truncate">{rec.source}</div>
+                          <div className="text-2xs text-gray-500 font-bold mt-1 max-w-[225px] truncate">{rec.source}</div>
                         </td>
                         <td className="px-4 py-4 align-top whitespace-nowrap">
                           <div className="text-xs font-bold text-gray-500">
@@ -441,11 +441,11 @@ export default function ReviewDesk() {
               {/* Metadata Grid */}
               <div className="grid grid-cols-2 gap-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                 <div>
-                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Created</span>
+                  <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block mb-1">Created</span>
                   <p className="text-sm font-bold text-gray-800">{activeRec.timestamp}</p>
                 </div>
                 <div>
-                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Pending Duration</span>
+                  <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block mb-1">Pending Duration</span>
                   <p className="text-sm font-bold text-gray-800">
                     {formatDuration(activeRec.createdDate, activeRec.resolvedDate)}
                     {!activeRec.resolvedDate && <span className="ml-1.5 font-semibold text-amber-600 text-xs">(ongoing)</span>}
@@ -454,14 +454,14 @@ export default function ReviewDesk() {
               </div>
 
               <div>
-                <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Description</span>
+                <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Description</span>
                 <div className="text-sm text-gray-700 leading-relaxed font-medium bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50">
                   <p>{activeRec.description}</p>
                 </div>
               </div>
 
               <div>
-                <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Reasoning</span>
+                <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Reasoning</span>
                 <div className="text-sm text-gray-700 leading-relaxed font-medium bg-slate-50 p-4 rounded-xl border border-gray-100">
                   <p>{activeRec.reasoning}</p>
                 </div>
@@ -469,11 +469,11 @@ export default function ReviewDesk() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <div>
-                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Suggested Action</span>
+                  <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Suggested Action</span>
                   <p className="text-sm text-gray-900 leading-relaxed font-bold whitespace-pre-line">{activeRec.suggestedAction}</p>
                 </div>
                 <div>
-                  <span className="text-[11.25px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Expected Benefit</span>
+                  <span className="text-2xs font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Expected Benefit</span>
                   <p className="text-sm text-emerald-700 leading-relaxed font-bold">{activeRec.expectedBenefit}</p>
                 </div>
               </div>
@@ -522,17 +522,17 @@ export default function ReviewDesk() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1">
+            <div className="overflow-y-auto overflow-x-auto flex-1">
               {recommendations.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-8">No alerts recorded yet.</p>
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 bg-white">
                     <tr className="border-b border-gray-100 text-gray-400">
-                      <th className="px-5 py-3 text-[11.25px] font-bold uppercase tracking-wider whitespace-nowrap">Time</th>
-                      <th className="px-4 py-3 text-[11.25px] font-bold uppercase tracking-wider">Title</th>
-                      <th className="px-4 py-3 text-[11.25px] font-bold uppercase tracking-wider whitespace-nowrap">Batch</th>
-                      <th className="px-5 py-3 text-[11.25px] font-bold uppercase tracking-wider">Status</th>
+                      <th className="px-5 py-3 text-2xs font-bold uppercase tracking-wider whitespace-nowrap">Time</th>
+                      <th className="px-4 py-3 text-2xs font-bold uppercase tracking-wider">Title</th>
+                      <th className="px-4 py-3 text-2xs font-bold uppercase tracking-wider whitespace-nowrap">Batch</th>
+                      <th className="px-5 py-3 text-2xs font-bold uppercase tracking-wider">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -540,7 +540,7 @@ export default function ReviewDesk() {
                       <tr key={rec.id} className="hover:bg-gray-50/50">
                         <td className="px-5 py-3 align-top whitespace-nowrap">
                           <div className="text-xs font-bold text-gray-700">{rec.timestamp}</div>
-                          <div className="text-[11.25px] text-gray-400">{new Date(rec.createdDate).toLocaleDateString()}</div>
+                          <div className="text-2xs text-gray-400">{new Date(rec.createdDate).toLocaleDateString()}</div>
                         </td>
                         <td className="px-4 py-3 align-top text-sm text-gray-800 font-medium max-w-[293px] truncate">{rec.title}</td>
                         <td className="px-4 py-3 align-top whitespace-nowrap text-xs font-bold text-gray-500">{rec.batchId}</td>
@@ -578,7 +578,7 @@ function KPICard({ title, value, icon, color, bg, isActive, onClick }: {
       </div>
       <div>
         <p className="text-xl font-black text-gray-900 leading-none">{value}</p>
-        <p className="text-[11.25px] text-gray-500 font-bold uppercase tracking-wider leading-tight mt-1">{title}</p>
+        <p className="text-2xs text-gray-500 font-bold uppercase tracking-wider leading-tight mt-1">{title}</p>
       </div>
     </button>
   );
@@ -599,19 +599,19 @@ function CriticalAttentionCard({ criticalOpen, overdueCritical, oldestPending, i
         <div className="p-2 rounded-lg bg-orange-50 text-orange-600">
           <AlertTriangle size={18} />
         </div>
-        <p className="text-[11.25px] text-gray-500 font-bold uppercase tracking-wider leading-tight">Critical Attention</p>
+        <p className="text-2xs text-gray-500 font-bold uppercase tracking-wider leading-tight">Critical Attention</p>
       </div>
       <div className="space-y-2">
         <div className="flex justify-between items-center">
-          <span className="text-[11.25px] text-gray-500 font-semibold uppercase tracking-wide">Critical Open</span>
+          <span className="text-2xs text-gray-500 font-semibold uppercase tracking-wide">Critical Open</span>
           <span className="text-base font-black text-rose-600">{criticalOpen}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-[11.25px] text-gray-500 font-semibold uppercase tracking-wide">Overdue Critical</span>
+          <span className="text-2xs text-gray-500 font-semibold uppercase tracking-wide">Overdue Critical</span>
           <span className="text-base font-black text-orange-600">{overdueCritical}</span>
         </div>
         <div className="flex justify-between items-center">
-          <span className="text-[11.25px] text-gray-500 font-semibold uppercase tracking-wide">Oldest Pending</span>
+          <span className="text-2xs text-gray-500 font-semibold uppercase tracking-wide">Oldest Pending</span>
           <span className="text-base font-black text-gray-700">{oldestPending}</span>
         </div>
       </div>
@@ -634,7 +634,7 @@ function Badge({ type, value }: { type: 'priority' | 'status', value: string }) 
   }
 
   return (
-    <span className={`inline-flex px-2 py-0.5 rounded text-[11.25px] font-bold uppercase tracking-wider border ${styles}`}>
+    <span className={`inline-flex px-2 py-0.5 rounded text-2xs font-bold uppercase tracking-wider border ${styles}`}>
       {value}
     </span>
   );
