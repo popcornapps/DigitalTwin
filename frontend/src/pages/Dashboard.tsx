@@ -7,10 +7,8 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceArea, BarChart, Bar } from 'recharts';
 import { getMockKPIs, getMockParameters, getMockTrendData, getMockAnomalies } from '../lib/mockData';
 import { useFilter } from '../context/FilterContext';
-import { KPIInfoModal } from '../components/KPIInfoModal';
-import { getKPIDefinition } from '../lib/kpiDefinitions';
-import { fetchPlantKpiRollup, fetchPlantCurrentPeriodKpi, fetchRunningBatches, fetchAlerts, fetchBatches, fetchAllBatchKPIs } from '../lib/api';
-import type { PlantKpiRollup, PlantPeriodKpi, DeviationAlert, BatchKPIs } from '../lib/api';
+import { fetchPlantCurrentPeriodKpi, fetchRunningBatches, fetchAlerts, fetchBatches, fetchAllBatchKPIs } from '../lib/api';
+import type { PlantPeriodKpi, DeviationAlert, BatchKPIs } from '../lib/api';
 
 export default function Dashboard() {
   const { selectedPlant, selectedProduct, selectedBatch, selectedPersona } = useFilter();
@@ -18,8 +16,6 @@ export default function Dashboard() {
   // Real, backed by batch_kpis - a rollup query (mean OEE/Quality/Process
   // Stability across the plant's batches), not a stored column. Only the
   // Manager persona reads this; Operator/QE views are untouched here.
-  const [plantRollup, setPlantRollup] = useState<PlantKpiRollup | null>(null);
-  const [plantRollupError, setPlantRollupError] = useState<string | null>(null);
 
   // Total Production (Current Shift / Today / This Month) - resolves the
   // REAL current shift/day/month (server clock) via
@@ -42,21 +38,11 @@ export default function Dashboard() {
 
   // Plant Performance Trend - real, one point per recent completed batch
   // (real oee_pct vs the golden batch's oee_pct), not a fake 24-hour curve.
-  const [batchTrend, setBatchTrend] = useState<{ date: string; current: number; best: number }[] | null>(null);
+  const [batchTrend, setBatchTrend] = useState<{ date: string; batchId: string; current: number; best: number }[] | null>(null);
   const RECENT_BATCH_TREND_COUNT = 10;
 
   useEffect(() => {
     let cancelled = false;
-    setPlantRollup(null);
-    setPlantRollupError(null);
-    fetchPlantKpiRollup(selectedPlant)
-      .then((res) => {
-        if (!cancelled) setPlantRollup(res);
-      })
-      .catch((err) => {
-        if (!cancelled) setPlantRollupError(err instanceof Error ? err.message : String(err));
-      });
-
     setCurrentShiftKpi(null);
     setTodayKpi(null);
     setThisMonthKpi(null);
@@ -96,14 +82,11 @@ export default function Dashboard() {
       });
 
     setBatchTrend(null);
-    // Per-batch "Plant Performance" composite - average of OEE + Quality
-    // Score + Yield for that one batch, mirroring the plant-level Plant
-    // Performance formula (which averages OEE/Quality/Process Stability
-    // across ALL batches) but swapping in Yield instead of Process
-    // Stability - Process Stability isn't shown anywhere else on this
-    // dashboard, while Yield is one of the two core batch KPIs (alongside
-    // SEC) this system is built around.
-    const batchPerformance = (k: BatchKPIs) => (k.oee_pct + k.quality_score_pct + k.yield_pct) / 3;
+    // Per-batch OEE - the real recorded value, not a blended composite.
+    // OEE is the standard plant-manager "north star" efficiency metric
+    // (Availability x Performance x Quality already baked in), a more
+    // meaningful trend for this persona than an ad-hoc average.
+    const batchPerformance = (k: BatchKPIs) => k.oee_pct;
     Promise.all([fetchBatches('all'), fetchAllBatchKPIs()])
       .then(([batches, kpis]) => {
         if (cancelled) return;
@@ -122,9 +105,9 @@ export default function Dashboard() {
             .map((b) => {
               const batchKpis = kpiByBatchId.get(b.batch_id);
               if (!batchKpis || goldenPerformance === null) return null;
-              return { date: b.batch_start_datetime.slice(0, 10), current: batchPerformance(batchKpis), best: goldenPerformance };
+              return { date: b.batch_start_datetime.slice(0, 10), batchId: b.batch_id, current: batchPerformance(batchKpis), best: goldenPerformance };
             })
-            .filter((p): p is { date: string; current: number; best: number } => p !== null)
+            .filter((p): p is { date: string; batchId: string; current: number; best: number } => p !== null)
         );
       })
       .catch(() => {
@@ -143,7 +126,8 @@ export default function Dashboard() {
   // React states called at top level unconditionally
   const [activeParamName, setActiveParamName] = useState('Temperature');
   const [activeAnomalyId, setActiveAnomalyId] = useState<string | null>(null);
-  const [activeKPIId, setActiveKPIId] = useState<string | null>(null);
+  const periodKpiNote = (aggregationVerb: string, value: string, periodData: PlantPeriodKpi) =>
+    `${aggregationVerb} across ${periodData.batch_count} batches completed in ${periodData.period_label} → Result: ${value}`;
 
   // Core Mock data runs safely for all personas
   const mockKPIs = getMockKPIs(selectedPlant, selectedProduct);
@@ -313,42 +297,6 @@ export default function Dashboard() {
   const plannedBatchesPerDay = 20;
   const criticalAlertCount = openAlerts?.filter((a) => a.severity === 'Critical').length ?? 0;
 
-  // AI insights (Manager persona) - real, driven by the plant KPI rollup,
-  // today's real completed-batch count, and real open alerts (no more
-  // static placeholder text for any of the 4 lines).
-  const aiExecutiveInsights = plantRollup ? [
-    `Plant performance remains ${plantRollup.plant_performance_pct > 90 ? 'above' : 'below'} baseline target.`,
-    todayKpi
-      ? `${todayKpi.batch_count} of ${plannedBatchesPerDay} planned batches completed today.`
-      : "Loading today's production count…",
-    `OEE across ${plantRollup.batch_count} recorded batches is ${plantRollup.oee_pct > 90 ? 'strong' : 'below target'} at ${plantRollup.oee_pct}%.`,
-    openAlerts
-      ? (criticalAlertCount > 0
-          ? `${criticalAlertCount} critical alert${criticalAlertCount > 1 ? 's' : ''} require attention.`
-          : 'No major quality or safety risks detected currently.')
-      : 'Loading alert status…',
-  ] : [
-    "Loading plant performance rollup…",
-  ];
-
-  // Real alerts from either the Process Parameter Deviation Agent or the KPI
-  // Prediction Agent - Critical first, then newest first within each severity,
-  // capped at 5 for this summary
-  // panel (see /api/alerts / AI Review Desk for the full list).
-  const recentAlerts = (openAlerts ?? [])
-    .slice()
-    .sort((a, b) => {
-      if (a.severity !== b.severity) return a.severity === 'Critical' ? -1 : 1;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    })
-    .slice(0, 5)
-    .map((a) => ({
-      id: a.alert_id,
-      severity: a.severity,
-      equipment: `${a.parameter_label} · ${a.running_batch_id}`,
-      desc: a.observation,
-    }));
-
   /* ---------------- RENDERING DECISIONS ---------------- */
 
   // Header Details
@@ -391,13 +339,15 @@ export default function Dashboard() {
       {/* 1. KPI Cards Row */}
       {selectedPersona === 'Plant Manager' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-          <KPICard title="Plant Performance" value={plantRollup ? `${plantRollup.plant_performance_pct}%` : '—'} trend="flat" trendValue={plantRollup ? `${plantRollup.batch_count} batches` : plantRollupError ? 'Error' : 'Loading'} desc="Overall health & efficiency" icon={<Activity />} color="text-emerald-600" bg="bg-emerald-50" />
-          <KPICard title="OEE" value={plantRollup ? `${plantRollup.oee_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" />
-          <KPICard title="Quality Score" value={plantRollup ? `${plantRollup.quality_score_pct}%` : '—'} trend="flat" trendValue={plantRollup ? 'Real' : plantRollupError ? 'Error' : 'Loading'} desc="Today's production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" />
-          <KPICard title="Energy Consumption" value={plantRollup ? `${plantRollup.total_energy_consumption_kwh.toLocaleString()} kWh` : '—'} trend="flat" trendValue={plantRollup ? `${plantRollup.batch_count} batches` : plantRollupError ? 'Error' : 'Loading'} desc="Overall plant energy usage" icon={<Zap />} color="text-amber-600" bg="bg-amber-50" />
-          <KPICard title="Production (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest completed shift" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
-          <KPICard title="Production (Today)" value={todayKpi ? `${todayKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest day in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
-          <KPICard title="Production (This Month)" value={thisMonthKpi ? `${thisMonthKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest month in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" />
+          <KPICard title="OEE (This Month)" value={thisMonthKpi ? `${thisMonthKpi.oee_pct}%` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={thisMonthKpi ? periodKpiNote('Averaged', `${thisMonthKpi.oee_pct}%`, thisMonthKpi) : undefined} />
+          <KPICard title="OEE (Today)" value={todayKpi ? `${todayKpi.oee_pct}%` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={todayKpi ? periodKpiNote('Averaged', `${todayKpi.oee_pct}%`, todayKpi) : undefined} />
+          <KPICard title="OEE (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.oee_pct}%` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={currentShiftKpi ? periodKpiNote('Averaged', `${currentShiftKpi.oee_pct}%`, currentShiftKpi) : undefined} />
+          <KPICard title="Quality Score (This Month)" value={thisMonthKpi ? `${thisMonthKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={thisMonthKpi ? periodKpiNote('Averaged', `${thisMonthKpi.quality_score_pct}%`, thisMonthKpi) : undefined} />
+          <KPICard title="Quality Score (Today)" value={todayKpi ? `${todayKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={todayKpi ? periodKpiNote('Averaged', `${todayKpi.quality_score_pct}%`, todayKpi) : undefined} />
+          <KPICard title="Quality Score (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={currentShiftKpi ? periodKpiNote('Averaged', `${currentShiftKpi.quality_score_pct}%`, currentShiftKpi) : undefined} />
+          <KPICard title="Production (This Month)" value={thisMonthKpi ? `${thisMonthKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest month in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={thisMonthKpi ? periodKpiNote('Summed', `${thisMonthKpi.total_production_kg.toLocaleString()} kg`, thisMonthKpi) : undefined} />
+          <KPICard title="Production (Today)" value={todayKpi ? `${todayKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest day in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={todayKpi ? periodKpiNote('Summed', `${todayKpi.total_production_kg.toLocaleString()} kg`, todayKpi) : undefined} />
+          <KPICard title="Production (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest completed shift" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={currentShiftKpi ? periodKpiNote('Summed', `${currentShiftKpi.total_production_kg.toLocaleString()} kg`, currentShiftKpi) : undefined} />
           <KPICard title="Active Alerts" value={openAlerts ? String(openAlerts.length) : '—'} trend="flat" trendValue={openAlerts ? (criticalAlertCount > 0 ? `${criticalAlertCount} critical` : 'None critical') : 'Loading'} desc="Current operational warnings" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" />
         </div>
       )}
@@ -450,8 +400,8 @@ export default function Dashboard() {
             <>
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Plant Performance Trend (Last {RECENT_BATCH_TREND_COUNT} Batches)</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">Real avg(OEE, Quality, Yield) per completed batch vs. the golden batch reference</p>
+                  <h2 className="text-lg font-bold text-gray-900">OEE Trend (Last {RECENT_BATCH_TREND_COUNT} Batches)</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Real OEE per completed batch vs. the golden batch reference</p>
                 </div>
                 <div className="flex gap-4 text-sm bg-gray-50 border border-gray-100 rounded-lg p-3 shrink-0">
                   <div>
@@ -478,12 +428,47 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={batchTrend ?? []}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#9ca3af"
+                      tickLine={false}
+                      axisLine={false}
+                      height={30}
+                      interval={0}
+                      tick={({ x, y, index }) => {
+                        const point = (batchTrend ?? [])[index];
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            <text dy={16} textAnchor="middle" fontSize={10} fontWeight={600} fill="#6b7280">{point?.batchId}</text>
+                          </g>
+                        );
+                      }}
+                    />
                     <YAxis domain={[0, 100]} stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}%`} />
-                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                    <Tooltip
+                      cursor={{ strokeDasharray: '3 3' }}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || payload.length === 0) return null;
+                        return (
+                          <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2.5 text-xs space-y-1.5 min-w-[160px]">
+                            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-gray-100">
+                              <span className="font-bold text-gray-800">{label}</span>
+                            </div>
+                            <div className="space-y-1">
+                              {payload.map((entry) => (
+                                <div key={entry.name} className="flex items-center justify-between gap-3" style={{ color: entry.color }}>
+                                  <span>{entry.name}</span>
+                                  <span className="font-semibold">{Number(entry.value).toFixed(1)}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: '11px' }}/>
-                    <Line type="monotone" dataKey="current" name="Batch Performance" stroke="#3b82f6" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="best" name="Golden Batch Performance" stroke="#eab308" strokeWidth={2.5} dot={false} strokeDasharray="4 4" />
+                    <Line type="monotone" dataKey="current" name="OEE" stroke="#3b82f6" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="best" name="Golden Batch OEE" stroke="#eab308" strokeWidth={2.5} dot={false} strokeDasharray="4 4" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -649,22 +634,14 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Bottom Side Panel Card (Insights) */}
+          {/* Bottom Side Panel Card (Insights) - Plant Manager has no card here;
+              its insights list was removed, and there's nothing else plant-wide
+              to show in this slot. */}
+          {selectedPersona !== 'Plant Manager' && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex-1 flex flex-col justify-between">
             <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest mb-3.5 flex items-center gap-2">
-              <Zap className="text-amber-500 h-5 w-5" /> {selectedPersona === 'Plant Manager' ? 'Plant Insights' : selectedPersona === 'Plant Operator' ? 'AI Process Observation' : 'AI Quality Assessment'}
+              <Zap className="text-amber-500 h-5 w-5" /> {selectedPersona === 'Plant Operator' ? 'AI Process Observation' : 'AI Quality Assessment'}
             </h2>
-            
-            {selectedPersona === 'Plant Manager' && (
-              <ul className="space-y-2.5">
-                {aiExecutiveInsights.map((insight, idx) => (
-                  <li key={idx} className="flex items-start text-xs font-semibold leading-snug">
-                    <span className="text-indigo-500 mr-2 mt-0.5 font-extrabold">•</span>
-                    <span className="text-gray-600">{insight}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
 
             {selectedPersona === 'Plant Operator' && (
               <div className={`p-4 rounded-xl border flex-1 flex items-center ${activeParamObj.status === 'normal' ? 'bg-slate-50 border-gray-200 text-gray-700' : activeParamObj.status === 'warning' ? 'bg-yellow-50/70 border-yellow-250 text-yellow-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
@@ -691,34 +668,12 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+          )}
 
         </div>
       </div>
 
       {/* 3. Wide Bottom Panel */}
-      {selectedPersona === 'Plant Manager' && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-            <AlertTriangle className="text-red-500 h-5 w-5" /> Recent Operational Alerts
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {recentAlerts.map(alert => (
-              <div key={alert.id} className="p-4 rounded-lg border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-sm transition-all duration-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`inline-flex px-2 py-0.5 rounded text-2xs font-black uppercase ${
-                    alert.severity === 'Critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {alert.severity}
-                  </span>
-                  <span className="text-xs font-black text-gray-800">{alert.equipment}</span>
-                </div>
-                <p className="text-xs text-gray-500 leading-normal font-semibold">{alert.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {selectedPersona === 'Plant Operator' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
           <h2 className="text-sm font-bold text-gray-800 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -828,49 +783,37 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* KPI Information Modal */}
-      {activeKPIId && getKPIDefinition(activeKPIId) && (
-        <KPIInfoModal
-          kpiDefinition={getKPIDefinition(activeKPIId)!}
-          currentValue={
-            activeKPIId === 'oee' && plantRollup ? `${plantRollup.oee_pct}%` :
-            activeKPIId === 'qualityScore' && plantRollup ? `${plantRollup.quality_score_pct}%` :
-            activeKPIId === 'plantPerformance' && plantRollup ? `${plantRollup.plant_performance_pct}%` :
-            undefined
-          }
-          hideFormula
-          onClose={() => setActiveKPIId(null)}
-        />
-      )}
-
     </div>
   );
 }
 
 function KPICard({
-  title, value, trend: _trend, trendValue, desc, icon, color, bg, kpiId, onClick
+  title, value, trend: _trend, trendValue, desc, icon, color, bg, note
 }: {
-  title: string, value: string, trend?: 'up' | 'down' | 'flat', trendValue: string, desc: string, icon: React.ReactNode, color: string, bg: string, kpiId?: string, onClick?: () => void
+  title: string, value: string, trend?: 'up' | 'down' | 'flat', trendValue: string, desc: string, icon: React.ReactNode, color: string, bg: string, note?: string
 }) {
-  const hasInfo = !!kpiId;
+  const hasNote = !!note;
+  // Revealed in normal document flow (not an absolutely-positioned overlay/modal)
+  // so it pushes the card taller instead of covering the value/description above it.
+  const [showNote, setShowNote] = useState(false);
 
   return (
-    <div
-      onClick={onClick}
-      className={`bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col justify-between transition-all duration-200 ${hasInfo ? 'cursor-pointer hover:shadow-lg hover:border-indigo-300' : 'hover:shadow-md'} relative`}
-    >
-      {hasInfo && (
-        <div className="absolute top-2 right-2">
-          <div className="bg-indigo-100 text-indigo-600 rounded-full p-1 opacity-60 hover:opacity-100 transition-opacity">
-            <Info size={12} />
-          </div>
-        </div>
-      )}
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col justify-between hover:shadow-md transition-all duration-200">
       <div className="flex justify-between items-start mb-2">
         <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{title}</p>
-        <div className={`p-1.5 rounded-lg ${bg} ${color}`}>
-          {React.cloneElement(icon as React.ReactElement, { size: 16 })}
-        </div>
+        {hasNote ? (
+          <button
+            type="button"
+            onClick={() => setShowNote((s) => !s)}
+            className="text-indigo-400 hover:text-indigo-600 transition-colors"
+          >
+            <Info size={14} />
+          </button>
+        ) : (
+          <div className={`p-1.5 rounded-lg ${bg} ${color}`}>
+            {React.cloneElement(icon as React.ReactElement, { size: 16 })}
+          </div>
+        )}
       </div>
       <div>
         <div className="flex items-end gap-2 mb-1">
@@ -886,8 +829,8 @@ function KPICard({
           </div>
         </div>
         <p className="text-2xs font-semibold text-gray-400 leading-tight mt-1">{desc}</p>
-        {hasInfo && (
-          <p className="text-2xs font-bold text-indigo-400 mt-1.5 uppercase tracking-wider">Click for details</p>
+        {hasNote && showNote && (
+          <p className="text-2xs font-semibold text-indigo-500 leading-snug mt-2 pt-2 border-t border-gray-100">{note}</p>
         )}
       </div>
     </div>

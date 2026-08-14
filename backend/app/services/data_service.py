@@ -182,6 +182,13 @@ def get_plant_period_kpis(
     if plant_df.empty:
         return None  # unknown plant -> router raises 404
 
+    # OEE/Quality Score live in batch_kpis_df (indexed by batch_id, same
+    # index as plant_df here) - reindex aligns them 1:1 with plant_df's rows,
+    # same join pattern get_plant_kpi_rollup already uses for the all-time
+    # version of these two fields.
+    oee_pct_by_batch = state.batch_kpis_df['oee_pct'].reindex(plant_df.index)
+    quality_score_pct_by_batch = state.batch_kpis_df['quality_score_pct'].reindex(plant_df.index)
+
     # batch_start_datetime was overwritten to a formatted string in
     # AppState.load() to preserve exact API compatibility elsewhere - parse it
     # back to a real Timestamp here. An explicit format string (with a
@@ -213,6 +220,7 @@ def get_plant_period_kpis(
         mask &= filter_key <= pd.Timestamp(end_date)
 
     energy_kwh, actual_output_kg = plant_df['energy_kwh'][mask], plant_df['actual_output_kg'][mask]
+    oee_pct_vals, quality_score_pct_vals = oee_pct_by_batch[mask], quality_score_pct_by_batch[mask]
     calendar_day, hour, is_day_shift, shift_date = calendar_day[mask], hour[mask], is_day_shift[mask], shift_date[mask]
 
     if group_by == 'day':
@@ -231,10 +239,14 @@ def get_plant_period_kpis(
         'bucket_start': bucket_start,
         'energy_kwh': energy_kwh,
         'actual_output_kg': actual_output_kg,
+        'oee_pct': oee_pct_vals,
+        'quality_score_pct': quality_score_pct_vals,
     }).groupby(['period_label', 'bucket_start'], as_index=False).agg(
         batch_count=('energy_kwh', 'size'),
         energy_consumption_kwh=('energy_kwh', 'sum'),
         total_production_kg=('actual_output_kg', 'sum'),
+        oee_pct=('oee_pct', 'mean'),
+        quality_score_pct=('quality_score_pct', 'mean'),
     ).sort_values('bucket_start')
 
     # Valid plant, just nothing in the requested date range -> empty list, not
@@ -248,6 +260,8 @@ def get_plant_period_kpis(
             batch_count=int(row.batch_count),
             energy_consumption_kwh=round(float(row.energy_consumption_kwh), 2),
             total_production_kg=round(float(row.total_production_kg), 2),
+            oee_pct=round(float(row.oee_pct), 2),
+            quality_score_pct=round(float(row.quality_score_pct), 2),
         )
         for row in grouped.itertuples()
     ]
@@ -304,6 +318,8 @@ def get_plant_current_period_kpi(state: AppState, plant: str, group_by: str) -> 
         batch_count=0,
         energy_consumption_kwh=0.0,
         total_production_kg=0.0,
+        oee_pct=0.0,
+        quality_score_pct=0.0,
     )
 
 

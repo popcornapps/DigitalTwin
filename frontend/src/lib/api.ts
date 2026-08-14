@@ -146,6 +146,8 @@ export interface PlantPeriodKpi {
   batch_count: number;
   energy_consumption_kwh: number;
   total_production_kg: number;
+  oee_pct: number;
+  quality_score_pct: number;
 }
 
 export interface PlantPeriodKpiList {

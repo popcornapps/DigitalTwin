@@ -64,6 +64,8 @@ class PlantPeriodKpi(BaseModel):
     batch_count: int
     energy_consumption_kwh: float
     total_production_kg: float
+    oee_pct: float
+    quality_score_pct: float
 
 
 class PlantPeriodKpiList(BaseModel):

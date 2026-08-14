@@ -72,7 +72,10 @@ def _get_client():
         )
         return None
     try:
-        from openai import AzureOpenAI
+        # langfuse's drop-in wrapper - identical AzureOpenAI client, but every
+        # call gets auto-traced (prompt/response/latency/cost) to Langfuse
+        # when LANGFUSE_* env vars are set; a no-op passthrough otherwise.
+        from langfuse.openai import AzureOpenAI
         _client = AzureOpenAI(
             azure_endpoint=_AZURE_ENDPOINT,
             api_key=_AZURE_API_KEY,
@@ -242,6 +245,16 @@ def generate_kpi_reasoning(context: dict) -> dict:
         return {**_fallback_reasoning(context), 'reasoning_source': 'static'}
 
     try:
+        # Deterministic trace_id from the batch id - every reasoning call for
+        # the same running batch lands under one Langfuse trace instead of a
+        # flat, unrelated list. The trace ID itself must be a 32-char hex
+        # hash (Langfuse's required format, can't be arbitrary text), so the
+        # batch id is also set as the trace's name/metadata - that's what's
+        # actually human-readable in the dashboard's Traces list.
+        from langfuse import get_client
+        batch_id = context['running_batch_id']
+        trace_id = get_client().create_trace_id(seed=batch_id)
+
         response = client.chat.completions.create(
             model=_AZURE_DEPLOYMENT,
             messages=[
@@ -249,6 +262,9 @@ def generate_kpi_reasoning(context: dict) -> dict:
                 {'role': 'user', 'content': _build_user_prompt(context)},
             ],
             response_format=_RESPONSE_SCHEMA,
+            trace_id=trace_id,
+            name=f'kpi-reasoning-{batch_id}',
+            metadata={'running_batch_id': batch_id, 'kpi_key': context.get('kpi_label')},
         )
         parsed = json.loads(response.choices[0].message.content)
         if parsed.get('urgency') not in URGENCY_LEVELS:

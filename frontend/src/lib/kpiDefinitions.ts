@@ -74,6 +74,24 @@ export const KPI_DEFINITIONS: Record<string, KPIDefinition> = {
     category: 'quality',
   },
 
+  production: {
+    id: 'production',
+    name: 'Total Production',
+    shortName: 'Production',
+    definition: 'Total Production is the combined actual output, in kg, of every batch completed within the selected period - a raw throughput figure, not an efficiency ratio.',
+    formula: 'Total Production = Σ Actual Output (kg) across batches completed in the period',
+    exampleCalculation: {
+      inputs: [
+        { label: 'Batches completed', value: '22' },
+        { label: 'Period', value: '2026-08' },
+      ],
+      calculation: 'Total Production = Σ Actual Output across 22 batches',
+      result: '3,270 kg',
+    },
+    benchmarkRange: 'Varies by plant capacity and product mix',
+    category: 'performance',
+  },
+
   assay: {
     id: 'assay',
     name: 'Assay %',
