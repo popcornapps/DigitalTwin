@@ -64,6 +64,16 @@ export default function KpiDeviationPrediction() {
   const [waitingForHistory, setWaitingForHistory] = useState(false);
   const [predictionError, setPredictionError] = useState<string | null>(null);
   const [selectedKpiKey, setSelectedKpiKey] = useState<KpiKey>('yield_pct');
+  const recommendedActionRef = useRef<HTMLDivElement>(null);
+  const [highlightRecommendedAction, setHighlightRecommendedAction] = useState(false);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const jumpToRecommendedAction = () => {
+    recommendedActionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    setHighlightRecommendedAction(true);
+    highlightTimeoutRef.current = setTimeout(() => setHighlightRecommendedAction(false), 1500);
+  };
   const [tickIntervalSeconds, setTickIntervalSeconds] = useState<number | null>(null);
 
   // Global switch (backend/app/live/ai_mode.py) - the SAME toggle Process
@@ -218,7 +228,7 @@ export default function KpiDeviationPrediction() {
             KPI Prediction & Deviation
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-gray-500">Live simulated telemetry for</p>
+            <p className="text-sm text-gray-500">Live telemetry for</p>
             <select
               value={selectedRunningBatchId ?? ''}
               onChange={(e) => setSelectedRunningBatchId(e.target.value)}
@@ -235,7 +245,7 @@ export default function KpiDeviationPrediction() {
           {selectedRunningBatch && (
             <p className="text-xs text-black mt-1 flex items-center font-medium gap-1.5 flex-wrap">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Simulated live feed
+              live feed
               {tickIntervalSeconds != null && (
                 <span>· Updates every {Number.isInteger(tickIntervalSeconds) ? tickIntervalSeconds : tickIntervalSeconds.toFixed(1)}s</span>
               )}
@@ -357,9 +367,14 @@ export default function KpiDeviationPrediction() {
                     <span className={`text-sm font-bold ${CONFIDENCE_STYLE[selectedKpi.confidence]}`}>{selectedKpi.confidence}</span>
                     <p className="text-2xs text-gray-500 leading-snug mt-0.5">{selectedKpi.confidence_reason}</p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-2xs font-bold ${URGENCY_STYLE[selectedKpi.urgency]}`}>
+                  <button
+                    type="button"
+                    onClick={jumpToRecommendedAction}
+                    title="Jump to Recommended Action"
+                    className={`px-2.5 py-1 rounded-full text-2xs font-bold cursor-pointer hover:opacity-90 transition-opacity ${URGENCY_STYLE[selectedKpi.urgency]}`}
+                  >
                     {selectedKpi.urgency}
-                  </span>
+                  </button>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${STATUS_BADGE[selectedKpi.status]}`}>
                     {STATUS_LABEL[selectedKpi.status]}
                   </span>
@@ -367,7 +382,7 @@ export default function KpiDeviationPrediction() {
               </div>
 
               <div>
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Why</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">Why</h3>
                 <p className="text-sm text-gray-700 leading-relaxed">{selectedKpi.deviation_explanation}</p>
               </div>
 
@@ -448,7 +463,12 @@ export default function KpiDeviationPrediction() {
                 </div>
               )}
 
-              <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
+              <div
+                ref={recommendedActionRef}
+                className={`bg-indigo-50 border rounded-lg p-4 transition-shadow duration-300 ${
+                  highlightRecommendedAction ? 'border-indigo-400 ring-2 ring-indigo-300' : 'border-indigo-100'
+                }`}
+              >
                 <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1.5">Recommended Action</h3>
                 <p className="text-sm text-indigo-900 leading-relaxed">{selectedKpi.recommended_action}</p>
               </div>

@@ -457,7 +457,7 @@ export default function ProcessMonitoring() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Process Monitoring</h1>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-gray-500">Live simulated telemetry for</p>
+            <p className="text-sm text-gray-500">Live telemetry for</p>
             <select
               value={selectedRunningBatchId ?? ''}
               onChange={(e) => setSelectedRunningBatchId(e.target.value)}
@@ -479,7 +479,7 @@ export default function ProcessMonitoring() {
           {selectedRunningBatch && (
             <p className="text-xs text-black mt-1 flex items-center font-medium gap-1.5 flex-wrap">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Simulated live feed
+              live feed
               {tickIntervalSeconds != null && (
                 <span>· Updates every {Number.isInteger(tickIntervalSeconds) ? tickIntervalSeconds : tickIntervalSeconds.toFixed(1)}s</span>
               )}

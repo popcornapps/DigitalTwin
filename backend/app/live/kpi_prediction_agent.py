@@ -110,6 +110,254 @@ LOWER_IS_BETTER = {
 WARNING_THRESHOLD_PCT = 5.0
 CRITICAL_THRESHOLD_PCT = 15.0
 
+# Which process parameters actually feed each KPI's formula, and how much
+# weight each carries - mirrors the REAL formula chain in both
+# scripts/generate-batch-kpis/generate_batch_kpis.py (historical) and
+# scripts/generate-synthetic-kpi-data/generate_synthetic_kpi_data.py (the
+# model's own training labels), not an independent guess. Previously this
+# agent ranked all 12 parameters by raw deviation alone and reused the same
+# top-3 list for every KPI, which is why a parameter with zero real
+# connection to a KPI (e.g. Agitator RPM for Quality Score, or any of the 8
+# support parameters for anything) could show up as its "leading driver."
+# Only 4 parameters ever appear here - temperature/process_pressure/
+# flow_rate/agitator_rpm - because those are the only ones the formula chain
+# was ever defined to depend on; the 8 support parameters are correlated
+# telemetry, not causal inputs (see that generator's module docstring).
+KPI_PARAMETER_WEIGHTS: dict[str, dict[str, float]] = {
+    # Yield = 1 - [0.35*(1-stability_frac) + 0.15*agitator_deviation];
+    # stability_frac is an equal-weighted average of these 3.
+    'yield_pct': {
+        'temperature': 0.35 / 3, 'process_pressure': 0.35 / 3, 'flow_rate': 0.35 / 3,
+        'agitator_rpm': 0.15,
+    },
+    # Quality Score/Assay = f(0.6*Temp + 0.2*Pressure + 0.2*FlowRate) -
+    # Temperature-weighted, NOT an equal split like Yield's stability term.
+    'quality_score_pct': {
+        'temperature': 0.6, 'process_pressure': 0.2, 'flow_rate': 0.2,
+    },
+    # Total Energy's instability penalty is the same equal-weighted stability
+    # term as Yield's (coefficient 0.5, not 0.35) - Agitator RPM plays no
+    # role in Energy at all. Energy/OEE-Availability also scale with final
+    # batch duration, which isn't a parameter - see KPI_CONTEXT_NOTES.
+    'total_energy_kwh': {
+        'temperature': 0.5 / 3, 'process_pressure': 0.5 / 3, 'flow_rate': 0.5 / 3,
+    },
+    # SEC = Total Energy / Actual Output - a ratio of the two KPIs above, so
+    # it inherits both their weight sets (Energy's instability term +
+    # Yield's stability+agitator term), not an independent formula.
+    'sec_kwh_per_kg': {
+        'temperature': 0.5 / 3 + 0.35 / 3, 'process_pressure': 0.5 / 3 + 0.35 / 3, 'flow_rate': 0.5 / 3 + 0.35 / 3,
+        'agitator_rpm': 0.15,
+    },
+    # OEE = Availability * Performance * Quality. Only Quality traces to a
+    # parameter (same Temp/Pressure/Flow weights as Quality Score above) -
+    # Availability is duration-only and Performance has no parameter link at
+    # all, even in the ground-truth data (see KPI_CONTEXT_NOTES).
+    'oee_pct': {
+        'temperature': 0.6, 'process_pressure': 0.2, 'flow_rate': 0.2,
+    },
+}
+
+# Plain-language context handed to the LLM (and used in the deterministic
+# fallback) for the parts of a KPI's formula that CAN'T be traced to a
+# specific process parameter - stated honestly instead of the reasoning
+# layer inventing a cause for them.
+KPI_CONTEXT_NOTES: dict[str, str] = {
+    'oee_pct': (
+        "OEE's Availability component depends on final batch duration (only known once the batch "
+        "completes) and Performance is a modeled input with no direct process-parameter link today - "
+        "only the Quality component can be traced to a specific parameter."
+    ),
+    'total_energy_kwh': (
+        "Total Energy also scales with final batch duration - a longer batch (from any fault, not just "
+        "the parameters below) burns more energy regardless of which parameter is at fault."
+    ),
+    'sec_kwh_per_kg': (
+        "SEC is Total Energy divided by Actual Output, so it responds to both Energy's instability "
+        "drivers and Yield's stability/agitator drivers at once, not an independent cause of its own."
+    ),
+}
+
+# Below this, a parameter's deviation is treated as too small to call a real
+# contributor (matches the CONTRIBUTOR_SCORE_THRESHOLD previously used for
+# the flat 12-parameter ranking) - kept as a fallback "weak signal" flag so
+# the reasoning layer can say a KPI's deviation likely comes from an
+# unattributable part of its formula (see KPI_CONTEXT_NOTES) instead of
+# overstating a parameter that barely moved.
+CONTRIBUTOR_SCORE_THRESHOLD = 0.3
+
+
+def _kpi_contributing_parameters(kpi_key: str, parameter_deviations: dict) -> tuple[list[dict], bool]:
+    """Returns (contributors, weak_signal) for this specific KPI's formula -
+    ranked by deviation_score * formula_weight (a parameter that deviates a
+    lot but carries little weight in this KPI's formula shouldn't outrank
+    one that deviates moderately but dominates the formula), restricted to
+    only the parameters that actually feed this KPI. weak_signal is True
+    when none of those parameters cleared CONTRIBUTOR_SCORE_THRESHOLD - a
+    signal to the reasoning layer that the real cause may be one of this
+    KPI's unattributable components (see KPI_CONTEXT_NOTES) rather than the
+    weak parameter returned as a last-resort fallback."""
+    weights = KPI_PARAMETER_WEIGHTS.get(kpi_key, {})
+    candidates = []
+    for key, weight in weights.items():
+        p = dict(parameter_deviations[key])
+        p['formula_weight'] = round(weight, 3)
+        candidates.append(p)
+    candidates.sort(key=lambda p: p['deviation_score'] * p['formula_weight'], reverse=True)
+    significant = [p for p in candidates if p['deviation_score'] > CONTRIBUTOR_SCORE_THRESHOLD][:3]
+    if significant:
+        return significant, False
+    return candidates[:1], True
+
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def _stability_frac(pd_: dict) -> float:
+    """Live equivalent of generate_batch_kpis.py's process_stability_pct/100 -
+    equal-weighted average deviation of the 3 parameters that formula was
+    ever defined over. Shared by Yield, Total Energy, and SEC below, exactly
+    like the real formula chain shares it."""
+    scores = [pd_['temperature']['deviation_score'], pd_['process_pressure']['deviation_score'], pd_['flow_rate']['deviation_score']]
+    return _clamp01(1.0 - (sum(scores) / len(scores)))
+
+
+def _assay_stability(pd_: dict) -> float:
+    """Live equivalent of generate_synthetic_kpi_data.py's assay_stability -
+    Temperature-weighted (0.6/0.2/0.2), NOT the equal-weighted stability_frac
+    above. Shared by Quality Score and OEE's Quality sub-component."""
+    assay_relevant_dev = (
+        0.6 * pd_['temperature']['deviation_score']
+        + 0.2 * pd_['process_pressure']['deviation_score']
+        + 0.2 * pd_['flow_rate']['deviation_score']
+    )
+    return _clamp01(1.0 - assay_relevant_dev)
+
+
+def _stability_parameters(pd_: dict) -> list[dict]:
+    return [
+        {**pd_['temperature'], 'weight_within_component': round(1 / 3, 3)},
+        {**pd_['process_pressure'], 'weight_within_component': round(1 / 3, 3)},
+        {**pd_['flow_rate'], 'weight_within_component': round(1 / 3, 3)},
+    ]
+
+
+def _assay_parameters(pd_: dict) -> list[dict]:
+    return [
+        {**pd_['temperature'], 'weight_within_component': 0.6},
+        {**pd_['process_pressure'], 'weight_within_component': 0.2},
+        {**pd_['flow_rate'], 'weight_within_component': 0.2},
+    ]
+
+
+def _yield_components(pd_: dict) -> list[dict]:
+    """Yield's real 2-term formula: yield_loss_frac = 0.35*(1-stability_frac)
+    + 0.15*agitator_dev. contribution_estimate is each term's SHARE of that
+    estimated total loss - an explanatory reconstruction run in parallel to
+    the ML prediction using the same formula shape, not the model's own
+    attribution (the RF model has no built-in decomposition)."""
+    stability_frac = _stability_frac(pd_)
+    agitator_dev = min(1.0, pd_['agitator_rpm']['deviation_score'])
+    stability_loss = 0.35 * (1 - stability_frac)
+    agitator_loss = 0.15 * agitator_dev
+    total = stability_loss + agitator_loss
+    def share(x):
+        return round(x / total, 3) if total > 1e-9 else 0.0
+    return [
+        {
+            'name': 'Process Stability', 'contribution_estimate': share(stability_loss),
+            'parameters': _stability_parameters(pd_), 'note': None,
+        },
+        {
+            'name': 'Agitator Consistency', 'contribution_estimate': share(agitator_loss),
+            'parameters': [{**pd_['agitator_rpm'], 'weight_within_component': 1.0}], 'note': None,
+        },
+    ]
+
+
+def _quality_components(pd_: dict) -> list[dict]:
+    """Quality Score/Assay's single-component formula - only one component,
+    but the estimated points of assay drift are surfaced explicitly (not
+    just 'Temperature deviates'), same span (2x the 5-point spec half-width)
+    generate_batch_kpis.py normalizes against."""
+    assay_stability = _assay_stability(pd_)
+    estimated_assay_drift_points = round(2.0 * (1 - assay_stability) * 5.0, 2)
+    return [
+        {
+            'name': 'Assay Stability (Temperature-weighted)', 'contribution_estimate': 1.0,
+            'parameters': _assay_parameters(pd_),
+            'note': f'Estimated assay drift from target: ~{estimated_assay_drift_points} points (spec target 100%).',
+        },
+    ]
+
+
+def _energy_components(pd_: dict, elapsed_minutes: int) -> list[dict]:
+    """Total Energy's 2-term formula: a stability-driven instability penalty
+    (parameter-traceable) plus final-duration extension (not - final
+    duration is only known once the batch completes, so this stays an
+    honest note with elapsed-vs-nominal context, never a fabricated number)."""
+    stability_frac = _stability_frac(pd_)
+    instability_penalty_pct = round(0.5 * (1 - stability_frac) * 100, 1)
+    elapsed_vs_nominal_pct = round(100 * elapsed_minutes / NOMINAL_TOTAL_DURATION, 1)
+    return [
+        {
+            'name': 'Instability Penalty', 'contribution_estimate': None,
+            'parameters': _stability_parameters(pd_),
+            'note': f'Estimated energy-rate penalty from instability: +{instability_penalty_pct}%.',
+        },
+        {
+            'name': 'Duration Extension', 'contribution_estimate': None, 'parameters': [],
+            'note': (
+                f'Final duration is not yet known ({elapsed_minutes} min elapsed so far, {elapsed_vs_nominal_pct}% '
+                f'of the {NOMINAL_TOTAL_DURATION}-min nominal batch) - any fault that extends the batch increases '
+                f'Energy regardless of which parameter caused it.'
+            ),
+        },
+    ]
+
+
+def _sec_components(pd_: dict, elapsed_minutes: int) -> list[dict]:
+    """SEC = Total Energy / Actual Output - not an independent formula, so
+    its components are literally Energy's and Yield's, relabeled to show
+    which side of the ratio each belongs to."""
+    return (
+        [{**c, 'name': f'{c["name"]} (via Energy - numerator)'} for c in _energy_components(pd_, elapsed_minutes)]
+        + [{**c, 'name': f'{c["name"]} (via Yield - denominator)'} for c in _yield_components(pd_)]
+    )
+
+
+def _oee_components(pd_: dict, elapsed_minutes: int) -> list[dict]:
+    """OEE = Availability * Performance * Quality. Only Quality traces to a
+    parameter (same formula as Quality Score) - Availability and Performance
+    are stated as genuinely unattributable rather than guessed at."""
+    elapsed_vs_nominal_pct = round(100 * elapsed_minutes / NOMINAL_TOTAL_DURATION, 1)
+    quality = _quality_components(pd_)[0]
+    return [
+        {
+            'name': 'Availability', 'contribution_estimate': None, 'parameters': [],
+            'note': (
+                f'Depends on final batch duration, only known once complete ({elapsed_vs_nominal_pct}% of the '
+                f'{NOMINAL_TOTAL_DURATION}-min nominal duration elapsed so far).'
+            ),
+        },
+        {
+            'name': 'Performance', 'contribution_estimate': None, 'parameters': [],
+            'note': 'A modeled input with no direct process-parameter link, even in the underlying training data.',
+        },
+        {**quality, 'name': 'Quality'},
+    ]
+
+
+KPI_COMPONENT_BUILDERS = {
+    'yield_pct': lambda pd_, elapsed_minutes: _yield_components(pd_),
+    'quality_score_pct': lambda pd_, elapsed_minutes: _quality_components(pd_),
+    'total_energy_kwh': _energy_components,
+    'sec_kwh_per_kg': _sec_components,
+    'oee_pct': _oee_components,
+}
+
+
 # Rows shown in the small multi-parameter history table - shorter than
 # Process Monitoring's own History table (10 min) since this page already
 # has a lot of vertical content above/below it.
@@ -317,7 +565,6 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
     parameter_deviations = {
         key: _parameter_deviation(recent_readings, key, elapsed_minutes) for key in live_config.PARAMETER_KEYS
     }
-    ranked_parameters = sorted(parameter_deviations.values(), key=lambda p: p['deviation_score'], reverse=True)
 
     # Pass 1: all deterministic calculations (fast, no network calls) for
     # every KPI, and figure out which ones actually need a fresh reasoning
@@ -332,7 +579,17 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
         bad_deviation_pct = raw_deviation_pct if LOWER_IS_BETTER[kpi_key] else -raw_deviation_pct
         status = _classify(bad_deviation_pct)
         confidence, confidence_reason = _confidence_from_ci(float(ci_low[i]), float(ci_high[i]), golden_value, elapsed_minutes)
-        top_contributors = [p for p in ranked_parameters if p['deviation_score'] > 0.3][:3] or ranked_parameters[:1]
+        # KPI-specific now (see KPI_PARAMETER_WEIGHTS) - only parameters that
+        # actually feed this KPI's real formula can appear here, ranked by
+        # deviation weighted by how much they actually matter to it, not a
+        # single generic top-3-of-12 list reused for every KPI.
+        top_contributors, weak_signal = _kpi_contributing_parameters(kpi_key, parameter_deviations)
+        # The full formula chain (KPI -> component -> its parameters) for
+        # this KPI - a deeper, nested version of top_contributors above, one
+        # level down into the actual intermediate values (stability_frac,
+        # assay_stability, etc.) each KPI's real formula computes. See
+        # KPI_COMPONENT_BUILDERS.
+        components = KPI_COMPONENT_BUILDERS[kpi_key](parameter_deviations, elapsed_minutes)
 
         # Deliberately does NOT include the predicted value - the LLM is an
         # explanation engine, not something that should re-run every time the
@@ -345,7 +602,7 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
         # fresh reasoning attempt, even if nothing else changed - otherwise a
         # cached Static-mode result could keep being served after switching
         # to Agent LLM mode.
-        fingerprint = (current_ai_mode, status, top_contributors[0]['key'] if top_contributors else None)
+        fingerprint = (current_ai_mode, status, top_contributors[0]['key'] if top_contributors else None, weak_signal)
         cache_key = (running_batch_id, kpi_key)
         cached = _reasoning_cache.get(cache_key)
 
@@ -353,7 +610,8 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
             'kpi_key': kpi_key, 'predicted': predicted, 'golden_value': golden_value,
             'raw_deviation_pct': raw_deviation_pct, 'status': status, 'confidence': confidence,
             'confidence_reason': confidence_reason,
-            'top_contributors': top_contributors, 'fingerprint': fingerprint, 'cache_key': cache_key,
+            'top_contributors': top_contributors, 'weak_signal': weak_signal, 'components': components,
+            'fingerprint': fingerprint, 'cache_key': cache_key,
             'reasoning': cached[1] if (cached is not None and cached[0] == fingerprint) else None,
         })
 
@@ -379,6 +637,9 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
                 'status': calc['status'],
                 'confidence': calc['confidence'],
                 'contributing_parameters': calc['top_contributors'],
+                'weak_signal': calc['weak_signal'],
+                'kpi_formula_note': KPI_CONTEXT_NOTES.get(calc['kpi_key']),
+                'components': calc['components'],
             })
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(to_compute)) as executor:

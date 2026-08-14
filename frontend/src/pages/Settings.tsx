@@ -84,7 +84,7 @@ export default function Settings() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Create or stop simulated running batches, used by Process Monitoring and KPI Prediction & Deviation.</p>
+        <p className="text-sm text-gray-500 mt-1">Create or stop running batches, used by Process Monitoring and KPI Prediction & Deviation.</p>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
