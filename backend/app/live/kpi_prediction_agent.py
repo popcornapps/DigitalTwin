@@ -111,52 +111,85 @@ WARNING_THRESHOLD_PCT = 5.0
 CRITICAL_THRESHOLD_PCT = 15.0
 
 # Which process parameters actually feed each KPI's formula, and how much
-# weight each carries - mirrors the REAL formula chain in both
-# scripts/generate-batch-kpis/generate_batch_kpis.py (historical) and
-# scripts/generate-synthetic-kpi-data/generate_synthetic_kpi_data.py (the
-# model's own training labels), not an independent guess. Previously this
-# agent ranked all 12 parameters by raw deviation alone and reused the same
-# top-3 list for every KPI, which is why a parameter with zero real
-# connection to a KPI (e.g. Agitator RPM for Quality Score, or any of the 8
-# support parameters for anything) could show up as its "leading driver."
-# Only 4 parameters ever appear here - temperature/process_pressure/
-# flow_rate/agitator_rpm - because those are the only ones the formula chain
-# was ever defined to depend on; the 8 support parameters are correlated
-# telemetry, not causal inputs (see that generator's module docstring).
+# weight each carries - mirrors the REAL formula chain in
+# scripts/generate-synthetic-kpi-data/generate_synthetic_kpi_data.py's
+# compute_final_kpis (the model's own training labels), not an independent
+# guess. Previously this agent ranked all 12 parameters by raw deviation
+# alone and reused the same top-3 list for every KPI, which is why a
+# parameter with zero real connection to a KPI (e.g. Agitator RPM for
+# Quality Score) could show up as its "leading driver."
+#
+# 8 of 12 parameters appear here as of the 12-parameter causal-formula
+# revision: the original 4 (temperature/process_pressure/flow_rate/
+# agitator_rpm) plus 4 newly-causal support parameters (filter_
+# differential_pressure/shaker_vibration_frequency/inlet_air_humidity/
+# compressed_air_pressure) - added to the generator because their
+# baseline/noise is independent of the original 4 (not derived from another
+# parameter's instantaneous value), so their deviation is a genuine
+# independent signal, not a correlated pass-through. The remaining 4
+# (exhaust_air_temp/product_bed_temp/chamber_differential_pressure/
+# ahu_damper_position) still carry NO weight anywhere below, on purpose:
+# their baseline is computed FROM temperature's/flow_rate's own value every
+# tick, so they already echo those parameters' deviations - giving them
+# their own weight too would double-count the same root cause under two
+# names (see that generator's module docstring for the full reasoning).
+# Every coefficient below is copied directly from compute_final_kpis, not
+# re-derived - if that formula changes, this must change with it.
 KPI_PARAMETER_WEIGHTS: dict[str, dict[str, float]] = {
-    # Yield = 1 - [0.35*(1-stability_frac) + 0.15*agitator_deviation];
-    # stability_frac is an equal-weighted average of these 3.
+    # yield_loss_frac = 0.35*(1-stability_frac) + 0.15*agitator_dev
+    #                   + 0.03*filter_dp_dev + 0.02*shaker_dev
+    # stability_frac is an equal-weighted average of the first 3.
     'yield_pct': {
         'temperature': 0.35 / 3, 'process_pressure': 0.35 / 3, 'flow_rate': 0.35 / 3,
         'agitator_rpm': 0.15,
+        'filter_differential_pressure': 0.03, 'shaker_vibration_frequency': 0.02,
     },
-    # Quality Score/Assay = f(0.6*Temp + 0.2*Pressure + 0.2*FlowRate) -
-    # Temperature-weighted, NOT an equal split like Yield's stability term.
+    # assay_relevant_dev = 0.6*Temp + 0.2*Pressure + 0.2*FlowRate
+    #                      + 0.03*filter_dp_dev + 0.02*shaker_dev + 0.02*humidity_dev
+    # Temperature-weighted core, unchanged from before this revision; the 3
+    # new terms are added on top, not carved out of the core (see the
+    # generator's module docstring on why the core weights stay untouched).
     'quality_score_pct': {
         'temperature': 0.6, 'process_pressure': 0.2, 'flow_rate': 0.2,
+        'filter_differential_pressure': 0.03, 'shaker_vibration_frequency': 0.02, 'inlet_air_humidity': 0.02,
     },
-    # Total Energy's instability penalty is the same equal-weighted stability
-    # term as Yield's (coefficient 0.5, not 0.35) - Agitator RPM plays no
-    # role in Energy at all. Energy/OEE-Availability also scale with final
-    # batch duration, which isn't a parameter - see KPI_CONTEXT_NOTES.
+    # instability_penalty = 0.5*(1-stability_frac)
+    #                       + 0.06*filter_dp_dev + 0.04*humidity_dev + 0.02*compressed_air_dev
+    # Agitator RPM plays no role in Energy at all - unchanged. Energy/
+    # OEE-Availability also scale with final batch duration, which isn't a
+    # parameter - see KPI_CONTEXT_NOTES.
     'total_energy_kwh': {
         'temperature': 0.5 / 3, 'process_pressure': 0.5 / 3, 'flow_rate': 0.5 / 3,
+        'filter_differential_pressure': 0.06, 'inlet_air_humidity': 0.04, 'compressed_air_pressure': 0.02,
     },
     # SEC = Total Energy / Actual Output - a ratio of the two KPIs above, so
-    # it inherits both their weight sets (Energy's instability term +
-    # Yield's stability+agitator term), not an independent formula.
+    # it inherits both their weight sets in full (Energy's instability
+    # drivers + Yield's stability/agitator/secondary drivers), not an
+    # independent formula. Shared keys (filter_differential_pressure) sum
+    # their weight from both sides, exactly like temperature/pressure/flow do.
     'sec_kwh_per_kg': {
         'temperature': 0.5 / 3 + 0.35 / 3, 'process_pressure': 0.5 / 3 + 0.35 / 3, 'flow_rate': 0.5 / 3 + 0.35 / 3,
         'agitator_rpm': 0.15,
+        'filter_differential_pressure': 0.06 + 0.03, 'shaker_vibration_frequency': 0.02,
+        'inlet_air_humidity': 0.04, 'compressed_air_pressure': 0.02,
     },
     # OEE = Availability * Performance * Quality. Only Quality traces to a
-    # parameter (same Temp/Pressure/Flow weights as Quality Score above) -
-    # Availability is duration-only and Performance has no parameter link at
-    # all, even in the ground-truth data (see KPI_CONTEXT_NOTES).
+    # parameter (same weights as Quality Score above) - Availability is
+    # duration-only and Performance has no parameter link at all, even in
+    # the ground-truth data (see KPI_CONTEXT_NOTES).
     'oee_pct': {
         'temperature': 0.6, 'process_pressure': 0.2, 'flow_rate': 0.2,
+        'filter_differential_pressure': 0.03, 'shaker_vibration_frequency': 0.02, 'inlet_air_humidity': 0.02,
     },
 }
+
+# Categorical impact label shown to the operator alongside the raw
+# deviation_score - High/Medium/Low, not a re-derivation of anything: >=1.0
+# means the parameter's own deviation is AT or BEYOND its normal band edge
+# (deviation_score's own defined scale - see _parameter_deviation), and
+# CONTRIBUTOR_SCORE_THRESHOLD (below) is the same 0.3 bar already used to
+# decide whether a parameter counts as a real contributor at all.
+IMPACT_HIGH_THRESHOLD = 1.0
 
 # Plain-language context handed to the LLM (and used in the deterministic
 # fallback) for the parts of a KPI's formula that CAN'T be traced to a
@@ -187,6 +220,18 @@ KPI_CONTEXT_NOTES: dict[str, str] = {
 CONTRIBUTOR_SCORE_THRESHOLD = 0.3
 
 
+def _impact_level(deviation_score: float) -> str:
+    """Categorical High/Medium/Low label for the parameter-level explanation
+    - derived only from deviation_score's own already-defined scale (0 =
+    tracking target, ~1 = at the normal band edge, >1 = beyond it) and the
+    existing CONTRIBUTOR_SCORE_THRESHOLD bar, not a new judgment call."""
+    if deviation_score >= IMPACT_HIGH_THRESHOLD:
+        return 'High'
+    if deviation_score > CONTRIBUTOR_SCORE_THRESHOLD:
+        return 'Medium'
+    return 'Low'
+
+
 def _kpi_contributing_parameters(kpi_key: str, parameter_deviations: dict) -> tuple[list[dict], bool]:
     """Returns (contributors, weak_signal) for this specific KPI's formula -
     ranked by deviation_score * formula_weight (a parameter that deviates a
@@ -196,12 +241,16 @@ def _kpi_contributing_parameters(kpi_key: str, parameter_deviations: dict) -> tu
     when none of those parameters cleared CONTRIBUTOR_SCORE_THRESHOLD - a
     signal to the reasoning layer that the real cause may be one of this
     KPI's unattributable components (see KPI_CONTEXT_NOTES) rather than the
-    weak parameter returned as a last-resort fallback."""
+    weak parameter returned as a last-resort fallback. Each candidate also
+    carries impact_level (High/Medium/Low) - the parameter-level half of the
+    two-level explanation; formula_weight/components below are the
+    formula-level half."""
     weights = KPI_PARAMETER_WEIGHTS.get(kpi_key, {})
     candidates = []
     for key, weight in weights.items():
         p = dict(parameter_deviations[key])
         p['formula_weight'] = round(weight, 3)
+        p['impact_level'] = _impact_level(p['deviation_score'])
         candidates.append(p)
     candidates.sort(key=lambda p: p['deviation_score'] * p['formula_weight'], reverse=True)
     significant = [p for p in candidates if p['deviation_score'] > CONTRIBUTOR_SCORE_THRESHOLD][:3]
@@ -214,23 +263,40 @@ def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def _clipped_dev(pd_: dict, key: str) -> float:
+    """A KPI-formula additive term's deviation score, clipped to [0, 1] -
+    same convention generate_synthetic_kpi_data.py's compute_final_kpis uses
+    for every one of its clipped terms (agitator_dev_clipped,
+    filter_dp_dev_clipped, etc.), so a wildly-deviating parameter can't push
+    a KPI further than its coefficient's designed ceiling."""
+    return min(1.0, pd_[key]['deviation_score'])
+
+
 def _stability_frac(pd_: dict) -> float:
-    """Live equivalent of generate_batch_kpis.py's process_stability_pct/100 -
-    equal-weighted average deviation of the 3 parameters that formula was
-    ever defined over. Shared by Yield, Total Energy, and SEC below, exactly
-    like the real formula chain shares it."""
+    """Live equivalent of generate_synthetic_kpi_data.py's stability_frac -
+    equal-weighted average deviation of the 3 parameters that term was ever
+    defined over (unchanged by the 12-parameter causal-formula revision -
+    the new causal parameters are added as separate terms alongside this,
+    never folded into it). Shared by Yield, Total Energy, and SEC below,
+    exactly like the real formula chain shares it."""
     scores = [pd_['temperature']['deviation_score'], pd_['process_pressure']['deviation_score'], pd_['flow_rate']['deviation_score']]
     return _clamp01(1.0 - (sum(scores) / len(scores)))
 
 
 def _assay_stability(pd_: dict) -> float:
     """Live equivalent of generate_synthetic_kpi_data.py's assay_stability -
-    Temperature-weighted (0.6/0.2/0.2), NOT the equal-weighted stability_frac
-    above. Shared by Quality Score and OEE's Quality sub-component."""
+    Temperature-weighted core (0.6/0.2/0.2, unchanged since before the
+    12-parameter causal-formula revision) plus the 3 new causal terms added
+    on top (Filter DP/Shaker/Humidity) - exactly mirrors assay_relevant_dev
+    in compute_final_kpis, coefficient for coefficient. Shared by Quality
+    Score and OEE's Quality sub-component."""
     assay_relevant_dev = (
         0.6 * pd_['temperature']['deviation_score']
         + 0.2 * pd_['process_pressure']['deviation_score']
         + 0.2 * pd_['flow_rate']['deviation_score']
+        + 0.03 * _clipped_dev(pd_, 'filter_differential_pressure')
+        + 0.02 * _clipped_dev(pd_, 'shaker_vibration_frequency')
+        + 0.02 * _clipped_dev(pd_, 'inlet_air_humidity')
     )
     return _clamp01(1.0 - assay_relevant_dev)
 
@@ -243,25 +309,49 @@ def _stability_parameters(pd_: dict) -> list[dict]:
     ]
 
 
+# Weight sets below are the exact compute_final_kpis coefficients for each
+# component, renormalized to sum to 1 WITHIN that component only (so
+# weight_within_component reads as "this parameter's share of this
+# component," not its raw formula coefficient) - a display-only
+# normalization, not a new relationship; the underlying KPI math (in
+# KPI_PARAMETER_WEIGHTS and the generator) always uses the raw coefficients.
+_ASSAY_WEIGHTS = {
+    'temperature': 0.6, 'process_pressure': 0.2, 'flow_rate': 0.2,
+    'filter_differential_pressure': 0.03, 'shaker_vibration_frequency': 0.02, 'inlet_air_humidity': 0.02,
+}
+_ENERGY_PENALTY_WEIGHTS = {
+    'temperature': 0.5 / 3, 'process_pressure': 0.5 / 3, 'flow_rate': 0.5 / 3,
+    'filter_differential_pressure': 0.06, 'inlet_air_humidity': 0.04, 'compressed_air_pressure': 0.02,
+}
+_YIELD_SECONDARY_WEIGHTS = {'filter_differential_pressure': 0.03, 'shaker_vibration_frequency': 0.02}
+
+
+def _weighted_parameters(pd_: dict, weights: dict[str, float]) -> list[dict]:
+    total = sum(weights.values())
+    return [{**pd_[key], 'weight_within_component': round(weight / total, 3)} for key, weight in weights.items()]
+
+
 def _assay_parameters(pd_: dict) -> list[dict]:
-    return [
-        {**pd_['temperature'], 'weight_within_component': 0.6},
-        {**pd_['process_pressure'], 'weight_within_component': 0.2},
-        {**pd_['flow_rate'], 'weight_within_component': 0.2},
-    ]
+    return _weighted_parameters(pd_, _ASSAY_WEIGHTS)
 
 
 def _yield_components(pd_: dict) -> list[dict]:
-    """Yield's real 2-term formula: yield_loss_frac = 0.35*(1-stability_frac)
-    + 0.15*agitator_dev. contribution_estimate is each term's SHARE of that
-    estimated total loss - an explanatory reconstruction run in parallel to
-    the ML prediction using the same formula shape, not the model's own
-    attribution (the RF model has no built-in decomposition)."""
+    """Yield's real 3-term formula: yield_loss_frac = 0.35*(1-stability_frac)
+    + 0.15*agitator_dev + 0.03*filter_dp_dev + 0.02*shaker_dev.
+    contribution_estimate is each term's SHARE of that estimated total loss -
+    an explanatory reconstruction run in parallel to the ML prediction using
+    the same formula shape, not the model's own attribution (the RF model
+    has no built-in decomposition). The 3rd term (Secondary Process Factors)
+    was added by the 12-parameter causal-formula revision - see
+    KPI_PARAMETER_WEIGHTS."""
     stability_frac = _stability_frac(pd_)
-    agitator_dev = min(1.0, pd_['agitator_rpm']['deviation_score'])
+    agitator_dev = _clipped_dev(pd_, 'agitator_rpm')
+    filter_dp_dev = _clipped_dev(pd_, 'filter_differential_pressure')
+    shaker_dev = _clipped_dev(pd_, 'shaker_vibration_frequency')
     stability_loss = 0.35 * (1 - stability_frac)
     agitator_loss = 0.15 * agitator_dev
-    total = stability_loss + agitator_loss
+    secondary_loss = 0.03 * filter_dp_dev + 0.02 * shaker_dev
+    total = stability_loss + agitator_loss + secondary_loss
     def share(x):
         return round(x / total, 3) if total > 1e-9 else 0.0
     return [
@@ -273,6 +363,10 @@ def _yield_components(pd_: dict) -> list[dict]:
             'name': 'Agitator Consistency', 'contribution_estimate': share(agitator_loss),
             'parameters': [{**pd_['agitator_rpm'], 'weight_within_component': 1.0}], 'note': None,
         },
+        {
+            'name': 'Secondary Process Factors', 'contribution_estimate': share(secondary_loss),
+            'parameters': _weighted_parameters(pd_, _YIELD_SECONDARY_WEIGHTS), 'note': None,
+        },
     ]
 
 
@@ -280,12 +374,16 @@ def _quality_components(pd_: dict) -> list[dict]:
     """Quality Score/Assay's single-component formula - only one component,
     but the estimated points of assay drift are surfaced explicitly (not
     just 'Temperature deviates'), same span (2x the 5-point spec half-width)
-    generate_batch_kpis.py normalizes against."""
+    generate_batch_kpis.py normalizes against. Since the 12-parameter
+    causal-formula revision, this one component's parameter list carries 6
+    parameters (the original Temp/Pressure/Flow core plus Filter DP/Shaker/
+    Humidity) - still one component, because assay_relevant_dev is one
+    weighted sum, not several separate additive terms like Yield/Energy."""
     assay_stability = _assay_stability(pd_)
     estimated_assay_drift_points = round(2.0 * (1 - assay_stability) * 5.0, 2)
     return [
         {
-            'name': 'Assay Stability (Temperature-weighted)', 'contribution_estimate': 1.0,
+            'name': 'Assay Stability (Temperature-weighted, + secondary factors)', 'contribution_estimate': 1.0,
             'parameters': _assay_parameters(pd_),
             'note': f'Estimated assay drift from target: ~{estimated_assay_drift_points} points (spec target 100%).',
         },
@@ -296,14 +394,23 @@ def _energy_components(pd_: dict, elapsed_minutes: int) -> list[dict]:
     """Total Energy's 2-term formula: a stability-driven instability penalty
     (parameter-traceable) plus final-duration extension (not - final
     duration is only known once the batch completes, so this stays an
-    honest note with elapsed-vs-nominal context, never a fabricated number)."""
+    honest note with elapsed-vs-nominal context, never a fabricated number).
+    Since the 12-parameter causal-formula revision, the Instability Penalty
+    term also includes Filter DP/Humidity/Compressed Air (see
+    _ENERGY_PENALTY_WEIGHTS) - still one additive term/component, not a
+    separate one, exactly like compute_final_kpis's instability_penalty."""
     stability_frac = _stability_frac(pd_)
-    instability_penalty_pct = round(0.5 * (1 - stability_frac) * 100, 1)
+    filter_dp_dev = _clipped_dev(pd_, 'filter_differential_pressure')
+    humidity_dev = _clipped_dev(pd_, 'inlet_air_humidity')
+    compressed_air_dev = _clipped_dev(pd_, 'compressed_air_pressure')
+    instability_penalty_pct = round(
+        (0.5 * (1 - stability_frac) + 0.06 * filter_dp_dev + 0.04 * humidity_dev + 0.02 * compressed_air_dev) * 100, 1
+    )
     elapsed_vs_nominal_pct = round(100 * elapsed_minutes / NOMINAL_TOTAL_DURATION, 1)
     return [
         {
             'name': 'Instability Penalty', 'contribution_estimate': None,
-            'parameters': _stability_parameters(pd_),
+            'parameters': _weighted_parameters(pd_, _ENERGY_PENALTY_WEIGHTS),
             'note': f'Estimated energy-rate penalty from instability: +{instability_penalty_pct}%.',
         },
         {
@@ -650,6 +757,7 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
 
     kpis = [
         {
+            # --- Model-predicted KPI: the ML model's own output, untouched by the reasoning layer ---
             'key': c['kpi_key'],
             'label': KPI_LABELS[c['kpi_key']],
             'unit': KPI_UNITS[c['kpi_key']],
@@ -659,7 +767,20 @@ def predict_kpis(running_batch_id: str, elapsed_minutes: int, plant: str) -> dic
             'status': c['status'],
             'confidence': c['confidence'],
             'confidence_reason': c['confidence_reason'],
+            # --- Observed parameter deviation (level 1 - "what is deviating"): raw
+            # sensor readings vs Golden, ranked by real formula weight, with a
+            # plain High/Medium/Low impact_level - computed here, never by the LLM ---
             'contributing_parameters': c['top_contributors'],
+            'weak_signal': c['weak_signal'],
+            # --- Formula-derived KPI components (level 2 - "how that deviation
+            # turns into this KPI"): the approved formula's own component chain,
+            # computed here from KPI_PARAMETER_WEIGHTS/KPI_COMPONENT_BUILDERS -
+            # the LLM/Static reasoning below explains this, never recomputes it ---
+            'formula_components': c['components'],
+            'kpi_formula_note': KPI_CONTEXT_NOTES.get(c['kpi_key']),
+            # --- AI interpretation/recommendation (level 3): the reasoning layer's
+            # OWN text, synthesized from the 3 sections above - see
+            # app.live.kpi_llm_agent for the static-fallback/Azure OpenAI split ---
             'kpi_summary': c['reasoning']['kpi_summary'],
             'deviation_explanation': c['reasoning']['deviation_explanation'],
             'urgency': c['reasoning']['urgency'],

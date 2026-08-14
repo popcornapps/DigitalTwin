@@ -45,7 +45,19 @@ TARGET_COLUMNS = ['yield_pct_final', 'quality_score_pct_final', 'sec_kwh_per_kg_
 WEIGHT_COLUMN = 'row_weight'
 PLANT = 'Hyderabad Plant'
 PRODUCT = 'Paracetamol 500mg'
-GENERATION_METHOD_VERSION = 'v5-12param'
+GENERATION_METHOD_VERSION = 'v7-12param-causal8-noisefloor'
+
+# Matches app/live/kpi_prediction_agent.py's NOMINAL_TOTAL_DURATION and
+# EARLY_BATCH_FRACTION/MID_BATCH_FRACTION exactly (ported, not imported, same
+# convention the rest of this pipeline already uses) - stratifying test R^2
+# by these same buckets tells us whether the model is already accurate where
+# the app's own confidence gate says to trust it (>= MID_BATCH_FRACTION),
+# rather than relying on one blended number that early-batch rows - honestly
+# hard to predict from a 30-minute window alone, and already flagged
+# Low-confidence in the UI - would otherwise drag down.
+NOMINAL_TOTAL_DURATION = 385
+EARLY_BATCH_FRACTION = 0.25
+MID_BATCH_FRACTION = 0.55
 
 
 def load_dataset() -> pd.DataFrame:
@@ -99,6 +111,33 @@ def train():
         col: round(float(r2_score(y_test[:, i], y_pred[:, i], sample_weight=w_test)), 4) for i, col in enumerate(TARGET_COLUMNS)
     }
 
+    # Elapsed-fraction-stratified R^2 (unweighted) - the global numbers above
+    # blend genuinely-hard-to-predict early-batch rows (a 30-min window taken
+    # before a fault has ramped up looks almost like a Normal row, yet must
+    # predict the same eventual outcome) with late-batch rows, whose window
+    # mostly reflects the final ramp already and so should be far easier.
+    # Bucketing by elapsed_minutes / NOMINAL_TOTAL_DURATION tells us whether
+    # the model is already accurate where it matters most operationally -
+    # >= MID_BATCH_FRACTION, the same point app/live/kpi_prediction_agent.py's
+    # _evidence_ceiling starts allowing High confidence - rather than relying
+    # on one blended number that early rows (already flagged Low-confidence
+    # in the UI, regardless of what the model predicts) would otherwise drag
+    # down.
+    elapsed_fraction = test_df['elapsed_minutes'].values / NOMINAL_TOTAL_DURATION
+    buckets = {
+        'early (<25% elapsed)': elapsed_fraction < EARLY_BATCH_FRACTION,
+        'mid (25-55% elapsed)': (elapsed_fraction >= EARLY_BATCH_FRACTION) & (elapsed_fraction < MID_BATCH_FRACTION),
+        'late (>=55% elapsed)': elapsed_fraction >= MID_BATCH_FRACTION,
+    }
+    metrics_by_bucket = {}
+    for bucket_name, mask in buckets.items():
+        if mask.sum() == 0:
+            continue
+        metrics_by_bucket[bucket_name] = {
+            'n_rows': int(mask.sum()),
+            **{col: round(float(r2_score(y_test[mask, i], y_pred[mask, i])), 4) for i, col in enumerate(TARGET_COLUMNS)},
+        }
+
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, OUT_MODEL)
 
@@ -115,6 +154,7 @@ def train():
         'target_columns': TARGET_COLUMNS,
         'test_r2_unweighted': metrics_unweighted,
         'test_r2_weighted': metrics_weighted,
+        'test_r2_by_elapsed_bucket': metrics_by_bucket,
         'n_train_rows': len(train_df),
         'n_test_rows': len(test_df),
         'trained_on': 'synthetic_kpi_training_dataset_12param (Postgres)',
@@ -130,6 +170,11 @@ def train():
     print('Test R^2 by target (unweighted / weighted):')
     for col in TARGET_COLUMNS:
         print(f'  {col}: {metrics_unweighted[col]} / {metrics_weighted[col]}')
+    print('Test R^2 by elapsed-time bucket (unweighted):')
+    for bucket_name, bucket_metrics in metrics_by_bucket.items():
+        print(f"  {bucket_name} (n={bucket_metrics['n_rows']}):")
+        for col in TARGET_COLUMNS:
+            print(f'    {col}: {bucket_metrics[col]}')
     print(f'Wrote model -> {OUT_MODEL}')
     print(f'Wrote manifest -> {OUT_MANIFEST}')
 

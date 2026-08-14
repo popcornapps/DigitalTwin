@@ -49,11 +49,28 @@ already use.
 
 12 parameters, not 4 (updated for the Step 1/3 process-parameter expansion):
 the ORIGINAL 4 (Temperature/Process Pressure/Flow Rate/Agitator RPM) still
-drive the KPI formula chain below, unchanged - there is no real basis for,
-say, Shaker Vibration directly causing a Yield change, so this generator
-does NOT invent new KPI-causing relationships for the 8 new parameters. It
-DOES give the model their values as additional correlated input signal - the
-same real correlations already used in
+drive the core of the KPI formula chain below, unchanged. As of the
+12-parameter causal-formula revision (GENERATION_METHOD_VERSION
+'v6-12param-causal8'), 4 of the 8 added parameters ALSO carry a small,
+independent causal weight - Filter Differential Pressure, Shaker Vibration
+Frequency, Inlet Air Humidity, Compressed Air Pressure - see
+compute_final_kpis's FILTER_DP_*/SHAKER_*/HUMIDITY_*/COMPRESSED_AIR_*
+coefficients below. These 4 were chosen because their baseline/noise is
+generated independently of the original 4 (not derived from another
+parameter's instantaneous value), so their own deviation score is a genuine
+independent signal, not a correlated pass-through. The remaining 4 -
+Exhaust Air Temp, Product Bed Temp, Chamber Differential Pressure, AHU
+Damper Position - are still deliberately given NO causal weight: their
+baseline is computed FROM Temperature's or Flow Rate's own instantaneous
+value every tick (see below), so they already show a correlated deviation
+whenever Temperature/Flow Rate drifts; giving them their own additional KPI
+weight on top of that would double-count the same root cause under two
+names. All new coefficients are small relative to the original 4's weights
+and each is capped via min(1.0, deviation_score) - the same clipping
+convention already used for agitator_dev - so no single new parameter (or
+combination) can approach the original 4's influence even in a rare
+multi-fault batch. It DOES give the model their values as additional
+correlated input signal - the same real correlations already used in
 scripts/generate-support-parameters/generate_support_parameters.py (history)
 and app/live/simulator.py (live): Exhaust/Product Bed Temp track Temperature,
 Chamber Differential Pressure tracks Flow Rate, Filter Differential Pressure
@@ -62,6 +79,18 @@ drifting scenario), AHU Damper Position responds to Filter DP, Inlet Air
 Humidity is flat/ambient, Shaker Vibration + Compressed Air Pressure follow a
 periodic filter-cleaning burst cycle - ported a third time here, same
 "ported, not imported" convention.
+
+Deliberately NOT changed alongside this revision: scripts/generate-batch-kpis/
+generate_batch_kpis.py (the REAL historical generator, whose 0.6/0.2/0.2
+assay weights and PAR-GOLDEN's own already-recorded Quality Score/Assay stay
+exactly as before) and app/live/kpi_prediction_agent.py's explanation layer
+(KPI_PARAMETER_WEIGHTS etc., still 4-parameter-only until the new model is
+validated). The new coefficients below are added ON TOP of the existing core
+weights (temperature/pressure/flow's 0.6/0.2/0.2 for assay, 0.35/0.15 for
+yield, 0.5 for energy instability are all untouched), not a renormalization
+of them - a strict superset of the historical/explanation-layer formulas at
+zero deviation on the new 8, so no change to the real historical dataset is
+required.
 
 Entirely self-contained otherwise: does not read, import, or depend on any
 existing data/model file used by the real parameter-prediction pipeline
@@ -88,7 +117,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.db import get_connection  # noqa: E402
 
-GENERATION_METHOD_VERSION = 'v5-12param'
+GENERATION_METHOD_VERSION = 'v7-12param-causal8-noisefloor'
 
 # The live-batch subsystem this agent serves only ever simulates one plant
 # and one product (backend/app/live/config.py's PLANTS list and
@@ -353,14 +382,19 @@ def _apply_personality(base, offset, key):
     return base + offset
 
 
-# Which parameter(s) drift together, weighted so ~28% of batches are clean
-# Normal runs - a rough match to the real historical dataset's proportions.
-# Two new entries (FilterDP_Drift, Shaker_Drift) give the model realistic
-# examples of the 8 new parameters deviating INDEPENDENTLY of the original
-# 4 - without these, the model would never see that combination and could
-# mislearn "any deviation in the new 8 must mean the original 4 are also
-# off", which isn't true (see module docstring: no KPI-causing relationship
-# was invented for them).
+# Which parameter(s) drift together, weighted so ~26% of batches are clean
+# Normal runs - a rough match to the real historical dataset's proportions
+# (trimmed slightly from the prior 28% to make room for the 2 new scenarios
+# below without shrinking the original 4's coverage much). Four new entries
+# (FilterDP_Drift, Shaker_Drift, Humidity_Drift, CompressedAir_Drift) give
+# the model realistic examples of all 4 newly-causal parameters (see module
+# docstring) deviating INDEPENDENTLY of the original 4 and of each other -
+# every parameter that now carries a KPI weight has its own isolated-fault
+# training scenario, so the model can learn each one's effect in isolation
+# rather than only ever entangled with some other drift. Live batches
+# (app/live/registry.py) can select ANY of the 12 parameters as the sole
+# drifting_parameter, including these 4 - without a dedicated scenario here,
+# the model would never have seen that isolated case at training time.
 SCENARIOS = [
     ('Normal', ()),
     ('Temperature_Drift', ('temperature',)),
@@ -371,8 +405,10 @@ SCENARIOS = [
     ('Correlated_PressureFlow', ('process_pressure', 'flow_rate')),
     ('FilterDP_Drift', ('filter_differential_pressure',)),
     ('Shaker_Drift', ('shaker_vibration_frequency',)),
+    ('Humidity_Drift', ('inlet_air_humidity',)),
+    ('CompressedAir_Drift', ('compressed_air_pressure',)),
 ]
-SCENARIO_WEIGHTS = [0.28, 0.12, 0.12, 0.12, 0.12, 0.08, 0.08, 0.04, 0.04]
+SCENARIO_WEIGHTS = [0.26, 0.11, 0.11, 0.11, 0.11, 0.07, 0.07, 0.04, 0.04, 0.04, 0.04]
 
 # Multiple of the parameter's own band half-width that the deviation ramps up
 # to by the end of the batch. Each tier is a RANGE, not a fixed point - real
@@ -547,18 +583,81 @@ def _window_stats(values):
     return {'current': current, 'mean': mean, 'std': std, 'min': minimum, 'max': maximum, 'slope': slope}
 
 
+
+# A batch with NO drift at all still has real sensor noise on every
+# parameter (see INDEPENDENT_NOISE_STD/COMMON_NOISE_STD in
+# simulate_parameter_series) - that noise alone gives a nonzero mean_dev/
+# spread below even with zero drift, which _deviation_score_from_residual
+# used to pass straight through into the (untouched, approved) KPI weight
+# formulas. That was the actual root cause of "Normal" batches predicting an
+# unrealistically poor Quality/OEE: the deviation score conflated ordinary,
+# expected sensor noise with genuine drift, so an entirely healthy batch
+# still registered as a real deviation once weighted. The live simulator's
+# own noise levels are NOT changed by this - this only recalibrates how the
+# SYNTHETIC LABEL GENERATOR scores a given residual trace, and only affects
+# training labels, never anything in app/live/.
+#
+# Fix: measure each parameter's own typical noise-only mean_dev/spread
+# (_measure_noise_floor, averaged over many zero-drift simulations using the
+# exact same residual/window logic as final_deviation_scores below) and
+# subtract that floor before scoring - a batch's noise no longer counts
+# against it, but genuine drift (which pushes mean_dev/spread well past the
+# noise-only floor) still registers, proportionally, exactly as before.
+# Deliberately does NOT touch the approved KPI weight coefficients
+# (YIELD_LOSS_COEFF, the 0.6/0.2/0.2 assay weights, FILTER_DP_*/etc.) or
+# generate_batch_kpis.py's historical/Golden formulas - this only changes
+# what a "deviation score" of a given residual trace MEANS, not how KPIs are
+# computed from it.
+NOISE_FLOOR_SAMPLE_SEED = 999
+NOISE_FLOOR_SAMPLES = 60
+_noise_floor_cache: dict | None = None
+
+
+def _measure_noise_floor(n_samples: int = NOISE_FLOOR_SAMPLES) -> dict:
+    """Average (mean_dev, spread) each parameter's residual produces from
+    pure sensor noise alone (drifting_params=(), severity_mult=0.0) - the
+    same simulate_parameter_series/window/onset logic final_deviation_scores
+    uses below, just run standalone and averaged over many seeds so the
+    result is a stable expectation, not one noisy sample. Uses its own fixed
+    RNG seed, independent of any per-batch generation seed, so this
+    calibration is deterministic and reproducible run to run. Cached after
+    the first call - the 60-simulation cost is paid once per generate() run,
+    not once per batch."""
+    global _noise_floor_cache
+    if _noise_floor_cache is not None:
+        return _noise_floor_cache
+    sums = {key: [0.0, 0.0] for key in PARAMETER_KEYS}
+    seed_rng = np.random.RandomState(NOISE_FLOOR_SAMPLE_SEED)
+    for _ in range(n_samples):
+        rng = np.random.RandomState(int(seed_rng.randint(0, 2**31 - 1)))
+        directions = {key: 1 for key in PARAMETER_KEYS}  # irrelevant - no drift is ever applied (drifting_params=())
+        series, baseline_series, duration, onset = simulate_parameter_series(rng, (), 0.0, directions, 0)
+        for key in PARAMETER_KEYS:
+            start = int(round(onset[key]))
+            residual = series[key][start:duration + 1] - baseline_series[key][start:duration + 1]
+            stats = _window_stats(residual)
+            half_width = _band_half_width(key)
+            sums[key][0] += abs(stats['mean']) / half_width
+            sums[key][1] += stats['std'] / half_width
+    _noise_floor_cache = {key: (sums[key][0] / n_samples, sums[key][1] / n_samples) for key in PARAMETER_KEYS}
+    return _noise_floor_cache
+
+
 def _deviation_score_from_residual(key, residual_stats):
     """How far a parameter's RESIDUAL (actual minus its own phase-correct
-    baseline) is from zero over some window: 0 = tracking its expected curve
-    exactly, ~1 = mean residual at the edge of the normal band, >1 = beyond
-    it. Feeds the KPI formula chain below for the original 4 - the 8 new
-    parameters' deviation scores are still computed (kept for symmetry /
-    possible future use) but compute_final_kpis deliberately never reads
-    them, per the module docstring's design decision."""
+    baseline) is from zero over some window, net of that parameter's own
+    typical noise-only floor (see _measure_noise_floor above): 0 = tracking
+    its expected curve within normal sensor noise, ~1 = at the edge of the
+    normal band beyond that noise, >1 = beyond it. Feeds the KPI formula
+    chain below - for the original 4 always, and for
+    filter_differential_pressure/shaker_vibration_frequency/
+    inlet_air_humidity/compressed_air_pressure since the 12-parameter
+    causal-formula revision (see that section's coefficients)."""
     half_width = _band_half_width(key)
     mean_dev = abs(residual_stats['mean']) / half_width
     spread = residual_stats['std'] / half_width
-    return mean_dev + 0.4 * spread
+    mean_floor, spread_floor = _measure_noise_floor()[key]
+    return max(0.0, mean_dev - mean_floor) + 0.4 * max(0.0, spread - spread_floor)
 
 
 def final_deviation_scores(series, baseline_series, onset, duration):
@@ -581,9 +680,10 @@ def final_deviation_scores(series, baseline_series, onset, duration):
 # Stability -> Yield/Energy/Assay -> OEE), fed by the synthetic deviation
 # scores above instead of real measurements. Constants reused directly from
 # that real generator where they're generic to the process, not arbitrary.
-# Deliberately still keyed to only the original 4 parameters - see module
-# docstring's design decision (no invented KPI-causing relationship for the
-# 8 new ones). ---
+# The core chain is still keyed to the original 4 parameters, exactly
+# matching generate_batch_kpis.py; the 4 newly-causal support parameters
+# (FILTER_DP_*/SHAKER_*/HUMIDITY_*/COMPRESSED_AIR_* below) are added on top -
+# see module docstring's 12-parameter causal-formula revision section. ---
 THEORETICAL_OUTPUT_KG = 150.0  # matches the real per-product constant (single product today)
 BASE_ENERGY_KWH = 180.0
 ENERGY_PER_MINUTE_KWH = 0.16
@@ -598,6 +698,27 @@ YIELD_FRACTION_FLOOR = 0.85
 # instead, preserving the "Agitator RPM affects Yield via mixing/dosing
 # consistency" domain intuition.
 AGITATOR_YIELD_COEFF = 0.15
+
+# --- 12-parameter causal-formula revision (v6-12param-causal8) - see module
+# docstring for which 4 of the 8 added parameters get a weight here and why
+# (independent-origin baseline, not derived from another parameter's
+# instantaneous value) and why the other 4 don't (would double-count).
+# Added ON TOP of the untouched core weights above/below, not carved out of
+# them - approved via the KPI-formula-revision review; each coefficient is
+# small relative to its corresponding core term and every new deviation
+# score is clipped to [0, 1] (min(1.0, ...) at the call site) before being
+# multiplied by its coefficient, the same convention AGITATOR_YIELD_COEFF's
+# agitator_dev_clipped already uses, so no new parameter can swing a KPI
+# anywhere near as far as the original 4 even in a rare multi-fault batch. ---
+FILTER_DP_YIELD_COEFF = 0.03     # loaded filter -> product loss/rework
+SHAKER_YIELD_COEFF = 0.02        # excess vibration -> fines loss through filter media
+FILTER_DP_ASSAY_COEFF = 0.03     # loaded filter -> uneven bed drying -> assay drift
+SHAKER_ASSAY_COEFF = 0.02        # excess vibration -> particle-size/content-uniformity impact
+HUMIDITY_ASSAY_COEFF = 0.02      # humid inlet air -> under-dried product risk
+FILTER_DP_ENERGY_COEFF = 0.06    # loaded filter -> blower/fan works harder (largest new term - most direct mechanism)
+HUMIDITY_ENERGY_COEFF = 0.04     # humid inlet air -> reduced drying driving force -> more energy to reach dryness
+COMPRESSED_AIR_ENERGY_COEFF = 0.02  # low instrument air -> poor filter pulse-cleaning -> back into the filter-DP energy chain
+
 ASSAY_TARGET_PCT = 100.0
 ASSAY_SPEC_HALF_WIDTH = 5.0  # confirmed from the real data/paracetamol_parameter_config.csv's Assay row (target=100, upper=105)
 ASSAY_STABILITY_COEFF = 2.0
@@ -625,28 +746,70 @@ TARGET_COLUMNS = ['yield_pct_final', 'quality_score_pct_final', 'sec_kwh_per_kg_
 # NOT down-weighted - "stays Normal" is genuinely the correct, learnable
 # answer from any point in a Normal batch, unlike a drifting batch's
 # pre-onset window.
+#
+# This was previously a hard cutoff: AMBIGUOUS_ROW_WEIGHT strictly before
+# onset, full weight 1.0 from onset onward - including the very next minute
+# after onset. But the label a row must predict is still THE SAME single
+# final-batch outcome regardless of how far the drift has actually ramped by
+# the row's own elapsed minute (drift ramps linearly from onset to the
+# batch's end - see drift_offset above) - a row taken one minute past onset
+# has a 30-minute window that looks almost identical to a non-drifting one,
+# yet was being trained at full weight to predict the full eventual severity.
+# _row_weight below replaces the hard cutoff with a taper: weight rises
+# linearly from AMBIGUOUS_ROW_WEIGHT at the moment of onset up to 1.0 by the
+# batch's end, so training loss is concentrated where the window actually
+# carries the signal needed to predict the label it's paired with. The input
+# window and the final-outcome label themselves are UNCHANGED by this - only
+# how much each row counts during training/evaluation.
 AMBIGUOUS_ROW_WEIGHT = 0.15
 WEIGHT_COLUMN = 'row_weight'
+
+
+def _row_weight(t: int, batch_onset_minute: float | None, duration: int) -> float:
+    if batch_onset_minute is None:
+        return 1.0  # Normal batch - "stays Normal" is the correct answer from any point
+    onset = float(batch_onset_minute)  # onset can be a numpy float64 (from rng.uniform) - psycopg2 can't adapt that
+    if t < onset:
+        return AMBIGUOUS_ROW_WEIGHT
+    ramp_span = max(1.0, duration - onset)
+    progress = min(1.0, (t - onset) / ramp_span)
+    return float(AMBIGUOUS_ROW_WEIGHT + (1.0 - AMBIGUOUS_ROW_WEIGHT) * progress)
 
 
 def compute_final_kpis(rng, deviation_scores, duration, severity_tier):
     """The full chain: intermediate physical values first (stability_frac,
     actual_output_kg, total_energy_kwh, assay_pct), final KPIs derived FROM
-    those - not computed independently per KPI. See module docstring. Reads
-    only the original 4 parameters' deviation scores - unchanged from the
-    4-parameter version of this generator."""
+    those - not computed independently per KPI. See module docstring. Core
+    chain reads the original 4 parameters' deviation scores; the 4
+    newly-causal support parameters (Filter DP/Shaker/Humidity/Compressed
+    Air) are added on top - see the 12-parameter causal-formula revision
+    coefficients above."""
     stability_frac = float(np.clip(
         1.0 - np.mean([deviation_scores['temperature'], deviation_scores['process_pressure'], deviation_scores['flow_rate']]),
         0.0, 1.0,
     ))
     agitator_dev_clipped = min(1.0, deviation_scores['agitator_rpm'])
+    # The 4 newly-causal support parameters (see module docstring + the
+    # coefficient block above) - each clipped to [0, 1] before being weighted,
+    # same convention as agitator_dev_clipped.
+    filter_dp_dev_clipped = min(1.0, deviation_scores['filter_differential_pressure'])
+    shaker_dev_clipped = min(1.0, deviation_scores['shaker_vibration_frequency'])
+    humidity_dev_clipped = min(1.0, deviation_scores['inlet_air_humidity'])
+    compressed_air_dev_clipped = min(1.0, deviation_scores['compressed_air_pressure'])
 
-    yield_loss_frac = YIELD_LOSS_COEFF * (1 - stability_frac) + AGITATOR_YIELD_COEFF * agitator_dev_clipped
+    yield_loss_frac = (
+        YIELD_LOSS_COEFF * (1 - stability_frac) + AGITATOR_YIELD_COEFF * agitator_dev_clipped
+        + FILTER_DP_YIELD_COEFF * filter_dp_dev_clipped + SHAKER_YIELD_COEFF * shaker_dev_clipped
+    )
     yield_fraction = float(np.clip(1.0 - yield_loss_frac + rng.normal(0, YIELD_LOSS_NOISE_STD), YIELD_FRACTION_FLOOR, 1.0))
     actual_output_kg = THEORETICAL_OUTPUT_KG * yield_fraction
     yield_pct_final = 100.0 * yield_fraction
 
-    instability_penalty = ENERGY_INSTABILITY_COEFF * (1 - stability_frac)
+    instability_penalty = (
+        ENERGY_INSTABILITY_COEFF * (1 - stability_frac)
+        + FILTER_DP_ENERGY_COEFF * filter_dp_dev_clipped + HUMIDITY_ENERGY_COEFF * humidity_dev_clipped
+        + COMPRESSED_AIR_ENERGY_COEFF * compressed_air_dev_clipped
+    )
     total_energy_kwh_final = (
         BASE_ENERGY_KWH + ENERGY_PER_MINUTE_KWH * duration * (1 + instability_penalty) + rng.normal(0, ENERGY_NOISE_STD_KWH)
     )
@@ -655,8 +818,14 @@ def compute_final_kpis(rng, deviation_scores, duration, severity_tier):
     # Temperature-weighted (not equal-weighted like the real generator's
     # stability_frac) - preserves the domain intuition that Temperature
     # dominates Quality Score, while still routing through the same
-    # stability -> assay -> quality chain shape as the real data.
-    assay_relevant_dev = 0.6 * deviation_scores['temperature'] + 0.2 * deviation_scores['process_pressure'] + 0.2 * deviation_scores['flow_rate']
+    # stability -> assay -> quality chain shape as the real data. The core
+    # 0.6/0.2/0.2 term is untouched (matches generate_batch_kpis.py exactly);
+    # the 3 new terms are added on top, not carved out of it - see the
+    # coefficient block above for why.
+    assay_relevant_dev = (
+        0.6 * deviation_scores['temperature'] + 0.2 * deviation_scores['process_pressure'] + 0.2 * deviation_scores['flow_rate']
+        + FILTER_DP_ASSAY_COEFF * filter_dp_dev_clipped + SHAKER_ASSAY_COEFF * shaker_dev_clipped + HUMIDITY_ASSAY_COEFF * humidity_dev_clipped
+    )
     assay_stability = float(np.clip(1.0 - assay_relevant_dev, 0.0, 1.0))
     assay_deviation = ASSAY_STABILITY_COEFF * (1 - assay_stability) * ASSAY_SPEC_HALF_WIDTH
     assay_pct = float(np.clip(ASSAY_TARGET_PCT - assay_deviation + rng.normal(0, ASSAY_NOISE_STD), ASSAY_FLOOR_PCT, ASSAY_CEILING_PCT))
@@ -704,7 +873,16 @@ def write_rows_to_postgres(rows) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute('TRUNCATE TABLE synthetic_kpi_training_dataset_12param')
-            batch_values = [tuple(row[col] for col in columns) for row in rows]
+            # np.generic (numpy scalar types, e.g. the float64s rng.normal()/np.clip()
+            # return, or the np.str_ rng_master.choice() returns for `scenario`) must
+            # be cast to native Python types before hitting psycopg2 - NumPy 2.x
+            # changed these scalars' repr (e.g. "np.float64(...)"), which breaks
+            # psycopg2's adapters even though they're still subclasses of the native
+            # type. .item() converts any numpy scalar to its native Python equivalent.
+            batch_values = [
+                tuple(row[col].item() if isinstance(row[col], np.generic) else row[col] for col in columns)
+                for row in rows
+            ]
             cur.executemany(f'INSERT INTO synthetic_kpi_training_dataset_12param ({column_list}) VALUES ({placeholders})', batch_values)
         conn.commit()
     except Exception:
@@ -759,7 +937,7 @@ def generate():
         for t in range(LOOKBACK_MINUTES, duration + 1):
             window_now = {key: series[key][t - LOOKBACK_MINUTES:t + 1] for key in PARAMETER_KEYS}
             feature_row = build_feature_row(t, window_now)
-            row_weight = AMBIGUOUS_ROW_WEIGHT if (batch_onset_minute is not None and t < batch_onset_minute) else 1.0
+            row_weight = _row_weight(t, batch_onset_minute, duration)
             rows.append({
                 'batch_id': batch_id,
                 'scenario': scenario,

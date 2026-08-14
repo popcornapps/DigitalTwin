@@ -53,6 +53,14 @@ _RECOMMENDATION_TEMPLATES = {
     'process_pressure': 'Inspect the blower/damper and filter loading.',
     'flow_rate': 'Inspect the fan, duct, and filter for restriction or miscalibration.',
     'agitator_rpm': 'Inspect the agitator drive/bearings and VFD settings.',
+    # Added for the 4 newly-causal support parameters (12-parameter
+    # causal-formula revision) - without these, Static mode fell through to
+    # the generic "Investigate {label}" fallback for any of them, unlike the
+    # original 4's specific guidance.
+    'filter_differential_pressure': 'Inspect/clean the exhaust filter media and check for blinding or blockage.',
+    'shaker_vibration_frequency': 'Inspect the filter-bag shaker mechanism and its cleaning-cycle timing.',
+    'inlet_air_humidity': 'Check the dehumidifier/AHU inlet air-handling unit for correct dew-point control.',
+    'compressed_air_pressure': 'Check the plant compressed-air supply/compressor and pulse-cleaning valve pressure.',
 }
 
 _client = None
@@ -148,9 +156,20 @@ _RESPONSE_SCHEMA = {
 _SYSTEM_PROMPT = """You are a manufacturing operations assistant embedded in a pharmaceutical batch \
 monitoring system. A prediction of this batch's FINAL outcome for one KPI has ALREADY been computed by \
 a deterministic model - you are not deciding the predicted value, the Golden Batch comparison, the status \
-(Normal/Warning/Critical), or which process parameter ranks as most responsible; those are given to you \
-as facts. Your job is the reasoning layer only: turn that evidence into a SHORT, scannable assessment a \
-plant operator can read in a few seconds - not a written report.
+(Normal/Warning/Critical), which process parameters are deviating, their impact_level (High/Medium/Low), \
+or the KPI's formula breakdown; all of those are given to you as facts, computed by the app's own approved \
+formulas - never re-derive or override any of them. Your job is the reasoning layer only: turn that \
+evidence into a SHORT, scannable assessment a plant operator can read in a few seconds - not a written report.
+
+The evidence you're given has two distinct levels - always reason in this order, don't skip straight to \
+level 2 without grounding it in level 1:
+1. OBSERVED PARAMETER DEVIATION - which process parameters are actually off from their Golden Batch value \
+right now, and how much (impact_level is already computed: High/Medium/Low - use it as given).
+2. FORMULA-DERIVED KPI COMPONENTS - the KPI's own approved formula chain showing how those parameter \
+deviations turn into this KPI's predicted value (component -> the parameter(s) that feed it -> their \
+deviation). Contribution % on a component is an ESTIMATE reconstructed from the KPI's known formula, \
+computed in parallel to the ML prediction above - it is not the model's own attribution; don't present it \
+as exact.
 
 Write like a shift hand-off note. Every field is 1-2 short sentences (or, for recommended_action only, up \
 to 2 short bullet lines) - never a paragraph. Plain, direct, action-oriented words. No hedging ("it \
@@ -158,14 +177,11 @@ appears that"), no repeating a fact already stated in another field, no restatin
 shown elsewhere on the page, no disclaimers unless they ARE the action to take.
 
 Rules:
-- Use only the evidence provided below. Never invent a numeric value, component, or parameter that isn't in \
-the evidence.
-- The evidence gives you this KPI's real formula chain: KPI -> component(s) -> the process parameter(s) that \
-feed each component -> that parameter's deviation. Reason in that order: name the dominant component first \
-(its estimated contribution %, when given), then the parameter behind it and its deviation - don't jump \
-straight to a parameter without saying which part of the formula it belongs to.
-- Contribution % on a component is an ESTIMATE reconstructed from the KPI's known formula, computed in \
-parallel to the ML prediction above - it is not the model's own attribution. Don't present it as exact.
+- Use only the evidence provided below. Never invent a numeric value, component, parameter, or impact_level \
+that isn't in the evidence, and never override the status/confidence/impact_level already given.
+- Reason level 1 -> level 2 -> your interpretation, in that order: name the dominant component first (its \
+estimated contribution %, when given), then the parameter behind it, its deviation, and its already-given \
+impact_level - don't jump straight to a parameter without saying which part of the formula it belongs to.
 - Some components have NO parameter at all (their note says why - e.g. depends on final batch duration, or \
 is a modeled input with no live sensor). State that plainly when it's the more likely explanation instead of \
 inventing a parameter cause for it.
@@ -178,10 +194,21 @@ but always still give a real urgency level and one concrete next action.
 - If you find yourself writing more than 2 sentences for a field, cut it down before answering."""
 
 
+def _format_contributors(contributors: list[dict]) -> str:
+    lines = ["Level 1 - observed parameter deviation (already ranked and scored, do not re-derive):"]
+    for p in contributors:
+        lines.append(
+            f"  - {p['label']}: currently {p['current']} {p['unit']} vs Golden {p['golden']} {p['unit']} "
+            f"({p['direction']}, {p['deviation']:+.2f} {p['unit']}) - impact_level={p['impact_level']}, "
+            f"formula_weight={p['formula_weight']}"
+        )
+    return '\n'.join(lines)
+
+
 def _format_components(components: list[dict]) -> str:
     lines = [
-        "Formula breakdown for this KPI (component -> the parameter(s) that feed it -> their deviation; "
-        "contribution % is an estimate, not the model's own attribution):"
+        "Level 2 - formula-derived KPI components (component -> the parameter(s) that feed it -> their "
+        "deviation; contribution % is an estimate, not the model's own attribution):"
     ]
     for idx, comp in enumerate(components, start=1):
         contribution = comp.get('contribution_estimate')
@@ -208,6 +235,8 @@ def _build_user_prompt(context: dict) -> str:
         f"Status (already decided): {context['status']}",
         f"Model forecast confidence: {context['confidence']}",
         '',
+        _format_contributors(context.get('contributing_parameters') or []),
+        '',
         _format_components(context.get('components') or []),
     ]
     lines += [
@@ -225,9 +254,36 @@ def _build_user_prompt(context: dict) -> str:
 # Matches kpi_prediction_agent.CONTRIBUTOR_SCORE_THRESHOLD's value - kept as
 # an independent constant rather than an import, per this module's existing
 # "zero imports from kpi_prediction_agent.py" isolation convention (see
-# module docstring). Used only to decide whether a SECOND component is worth
-# mentioning alongside the dominant one below.
-_SECOND_CONTRIBUTOR_SIGNAL_THRESHOLD = 0.3
+# module docstring). Used for two things below: deciding whether a SECOND
+# component is worth mentioning alongside the dominant one, and (since the
+# 12-parameter causal-formula revision made components carry up to 6
+# parameters instead of 3) picking which parameter INSIDE a component is
+# named as its driver - a component's highest-weight parameter (e.g.
+# Temperature at 56% of Assay Stability) can still be barely deviating while
+# a lower-weight one is the one actually moving; naming the highest-weight
+# parameter regardless would contradict contributing_parameters (level 1),
+# which already excludes it for being below this same bar.
+_PARAMETER_SIGNIFICANCE_THRESHOLD = 0.3
+
+
+def _rank_components(components: list[dict]) -> list[dict]:
+    """Orders a KPI's components for narrative purposes - which one gets
+    named as "the main driver." Prefers each component's own
+    contribution_estimate (its actual computed % share of the KPI's
+    estimated deviation) when EVERY parameter-bearing component in this
+    KPI's list has one (true for Yield's Process Stability/Agitator
+    Consistency/Secondary Process Factors, now 3 components since the
+    12-parameter causal-formula revision) - otherwise a component with a
+    small share but one high-deviation parameter could rank as "dominant"
+    ahead of one with a much larger share, which would contradict the ~X%
+    figures shown right next to it. Falls back to _component_signal (peak
+    per-parameter signal) when any component lacks a contribution_estimate
+    (Energy/OEE/SEC mix in components with none - e.g. Duration Extension,
+    Availability, Performance - where there's no share number to rank by)."""
+    with_params = [c for c in components if c.get('parameters')]
+    if with_params and all(c.get('contribution_estimate') is not None for c in with_params):
+        return sorted(with_params, key=lambda c: c['contribution_estimate'], reverse=True)
+    return sorted(with_params, key=_component_signal, reverse=True)
 
 
 def _component_signal(component: dict) -> float:
@@ -262,7 +318,7 @@ def _fallback_reasoning(context: dict) -> dict:
     weak_signal = context.get('weak_signal', False)
     formula_note = context.get('kpi_formula_note')
 
-    ranked = sorted((c for c in components if c.get('parameters')), key=_component_signal, reverse=True)
+    ranked = _rank_components(components)
     leading_param = None
 
     if weak_signal and formula_note:
@@ -274,19 +330,36 @@ def _fallback_reasoning(context: dict) -> dict:
         )
     elif ranked:
         dominant = ranked[0]
-        leading_param = max(dominant['parameters'], key=lambda p: p['deviation_score'] * p['weight_within_component'])
+        # Prefer a parameter that's ACTUALLY deviating meaningfully (same bar
+        # contributing_parameters/level 1 already applies) over just the
+        # highest-weighted one in this component - a component can have a
+        # dominant weight (e.g. Temperature at 56% of Assay Stability) while
+        # barely moving, and naming it as "the driver" would contradict level
+        # 1, which already excluded it for being below this same threshold.
+        significant_params = [p for p in dominant['parameters'] if p['deviation_score'] > _PARAMETER_SIGNIFICANCE_THRESHOLD]
+        leading_param = max(
+            significant_params or dominant['parameters'],
+            key=lambda p: p['deviation_score'] * p['weight_within_component'],
+        )
         contribution_str = (
             f" (~{round(dominant['contribution_estimate'] * 100)}% of the estimated deviation)"
             if dominant.get('contribution_estimate') is not None else ''
         )
-        deviation_explanation = (
-            f"{dominant['name']}{contribution_str} is the main driver - "
-            f"{leading_param['label']} is running {leading_param['direction']} from its expected value "
-            f"({leading_param['current']} {leading_param['unit']} vs {leading_param['golden']} {leading_param['unit']})."
-        )
+        if significant_params:
+            deviation_explanation = (
+                f"{dominant['name']}{contribution_str} is the main driver - "
+                f"{leading_param['label']} is running {leading_param['direction']} from its expected value "
+                f"({leading_param['current']} {leading_param['unit']} vs {leading_param['golden']} {leading_param['unit']})."
+            )
+        else:
+            deviation_explanation = (
+                f"{dominant['name']}{contribution_str} is the main driver, though none of its parameters are "
+                f"individually deviating much yet - {leading_param['label']} carries the most weight here "
+                f"({leading_param['current']} {leading_param['unit']} vs {leading_param['golden']} {leading_param['unit']})."
+            )
         if dominant.get('note'):
             deviation_explanation += f' {dominant["note"]}'
-        second = next((c for c in ranked[1:] if _component_signal(c) > _SECOND_CONTRIBUTOR_SIGNAL_THRESHOLD), None)
+        second = next((c for c in ranked[1:] if _component_signal(c) > _PARAMETER_SIGNIFICANCE_THRESHOLD), None)
         if second:
             second_pct = (
                 f" (~{round(second['contribution_estimate'] * 100)}%)" if second.get('contribution_estimate') is not None else ''

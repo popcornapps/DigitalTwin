@@ -103,22 +103,48 @@
     "total_energy_kwh_final"
   ],
   "test_r2_unweighted": {
-    "yield_pct_final": 0.3145,
-    "quality_score_pct_final": 0.2919,
-    "sec_kwh_per_kg_final": 0.3621,
-    "oee_pct_final": 0.2946,
-    "total_energy_kwh_final": 0.322
+    "yield_pct_final": 0.4593,
+    "quality_score_pct_final": 0.2621,
+    "sec_kwh_per_kg_final": 0.4763,
+    "oee_pct_final": 0.2449,
+    "total_energy_kwh_final": 0.3831
   },
   "test_r2_weighted": {
-    "yield_pct_final": 0.3628,
-    "quality_score_pct_final": 0.3543,
-    "sec_kwh_per_kg_final": 0.4425,
-    "oee_pct_final": 0.371,
-    "total_energy_kwh_final": 0.4052
+    "yield_pct_final": 0.6355,
+    "quality_score_pct_final": 0.4462,
+    "sec_kwh_per_kg_final": 0.6601,
+    "oee_pct_final": 0.4828,
+    "total_energy_kwh_final": 0.5707
   },
-  "n_train_rows": 187728,
+  "test_r2_by_elapsed_bucket": {
+    "early (<25% elapsed)": {
+      "n_rows": 8040,
+      "yield_pct_final": -0.0451,
+      "quality_score_pct_final": -0.0399,
+      "sec_kwh_per_kg_final": -0.057,
+      "oee_pct_final": -0.173,
+      "total_energy_kwh_final": -0.118
+    },
+    "mid (25-55% elapsed)": {
+      "n_rows": 13800,
+      "yield_pct_final": 0.3091,
+      "quality_score_pct_final": 0.0278,
+      "sec_kwh_per_kg_final": 0.3476,
+      "oee_pct_final": 0.0209,
+      "total_energy_kwh_final": 0.2622
+    },
+    "late (>=55% elapsed)": {
+      "n_rows": 25348,
+      "yield_pct_final": 0.6824,
+      "quality_score_pct_final": 0.4627,
+      "sec_kwh_per_kg_final": 0.6966,
+      "oee_pct_final": 0.4875,
+      "total_energy_kwh_final": 0.5925
+    }
+  },
+  "n_train_rows": 188158,
   "n_test_rows": 47188,
   "trained_on": "synthetic_kpi_training_dataset_12param (Postgres)",
-  "generation_method_version": "v5-12param",
+  "generation_method_version": "v7-12param-causal8-noisefloor",
   "note": "Not wired into the running app yet - see app/live/kpi_prediction_agent.py for the model/manifest the app actually points at."
 }
