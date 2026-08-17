@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { LineChart, Line, ReferenceArea, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import {
   Info, Loader2, AlertTriangle, Square, Bot,
@@ -19,6 +20,34 @@ const LIVE_POLL_INTERVAL_MS = 3000;
 const HISTORY_MINUTES = 10;
 
 type Status = 'normal' | 'warning' | 'critical';
+
+// Picks which batch should be selected: the URL's own `batch` param if it's
+// still a real batch in the current list (so a refresh/revisit restores
+// exactly what was being viewed), otherwise the first RUNNING batch (never
+// a Completed/Stopped one, unlike the old data[0] default), otherwise
+// whatever's first in the list.
+// localStorage backstop for the URL param: navigating to a DIFFERENT page
+// (e.g. via the sidebar) and back starts that page's URL fresh with no
+// ?batch= at all - the query string doesn't travel with you the way it does
+// on a plain same-page refresh. localStorage does survive that, so it's
+// consulted as a second choice right after the URL, before falling back to
+// picking a batch from scratch.
+const LAST_BATCH_STORAGE_KEY = 'processMonitoring.selectedRunningBatchId';
+
+// Picks which batch should be selected: the URL's own `batch` param first
+// (an explicit/shareable choice), then the last one persisted to
+// localStorage, then the first RUNNING batch (never a Completed/Stopped
+// one, unlike the old data[0] default) - only if none of those are still a
+// real batch in the current list.
+function pickDefaultBatchId(data: RunningBatchSummary[], urlBatchId: string | null): string | null {
+  const storedBatchId = localStorage.getItem(LAST_BATCH_STORAGE_KEY);
+  for (const candidate of [urlBatchId, storedBatchId]) {
+    if (candidate && data.some((b) => b.running_batch_id === candidate)) return candidate;
+  }
+  const running = data.find((b) => b.status === 'Running');
+  if (running) return running.running_batch_id;
+  return data.length > 0 ? data[0].running_batch_id : null;
+}
 
 // This page only ever shows running batches now (Completed Batches mode was
 // removed as redundant - Batch Explorer already covers browsing finished
@@ -131,7 +160,25 @@ export default function ProcessMonitoring() {
   const [runningBatches, setRunningBatches] = useState<RunningBatchSummary[]>([]);
   const [runningBatchesLoading, setRunningBatchesLoading] = useState(true);
   const [runningBatchesError, setRunningBatchesError] = useState<string | null>(null);
-  const [selectedRunningBatchId, setSelectedRunningBatchId] = useState<string | null>(null);
+
+  // Selected batch lives in the URL (?batch=...), not local state - survives
+  // a page refresh and is restored on revisit, instead of resetting to
+  // whatever the mount effect below happens to pick first.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedRunningBatchId = searchParams.get('batch');
+  const setSelectedRunningBatchId = (id: string | null) => {
+    if (id) localStorage.setItem(LAST_BATCH_STORAGE_KEY, id);
+    else localStorage.removeItem(LAST_BATCH_STORAGE_KEY);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set('batch', id);
+        else next.delete('batch');
+        return next;
+      },
+      { replace: true },
+    );
+  };
   const [runningTelemetry, setRunningTelemetry] = useState<RunningBatchTelemetryResponse | null>(null);
 
   // --- Shared reference data ---
@@ -177,7 +224,8 @@ export default function ProcessMonitoring() {
       .then((data) => {
         if (cancelled) return;
         setRunningBatches(data);
-        setSelectedRunningBatchId((prev) => prev ?? (data.length > 0 ? data[0].running_batch_id : null));
+        const defaultId = pickDefaultBatchId(data, searchParams.get('batch'));
+        if (defaultId !== searchParams.get('batch')) setSelectedRunningBatchId(defaultId);
       })
       .catch((err) => {
         if (!cancelled) setRunningBatchesError(err instanceof Error ? err.message : String(err));

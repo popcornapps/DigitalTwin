@@ -18,18 +18,26 @@ class RunningBatchRegistry:
         self._history: dict[str, list[TelemetryReading]] = {}
         self._plant_seq: dict[str, int] = {}
 
-    def create(self, plant: str, scenario_profile: str, drifting_parameter: str | None) -> RunningBatch:
+    def create(
+        self, plant: str, scenario_profile: str, drifting_parameter: str | None, enforce_daily_cap: bool = True,
+    ) -> RunningBatch:
         # Counts every status (Running + Completed + Stopped) for today, not
         # just currently-active batches - see config.MAX_BATCHES_PER_PLANT_PER_DAY.
-        today = datetime.now(timezone.utc).date()
-        created_today = sum(
-            1 for b in self._batches.values() if b.plant == plant and b.started_at.date() == today
-        )
-        if created_today >= config.MAX_BATCHES_PER_PLANT_PER_DAY:
-            raise ValueError(
-                f"Daily batch limit ({config.MAX_BATCHES_PER_PLANT_PER_DAY}) reached for '{plant}' - "
-                'delete a completed/stopped batch or try again tomorrow.'
+        # enforce_daily_cap=False is used by the continuous-demo auto-
+        # replenish path (app.live.service.create_random_demo_batch, called
+        # from scheduler.py) - this cap exists to stop a HUMAN from
+        # spamming manual creation, not to throttle the system's own
+        # automatic replacement of a batch that just finished.
+        if enforce_daily_cap:
+            today = datetime.now(timezone.utc).date()
+            created_today = sum(
+                1 for b in self._batches.values() if b.plant == plant and b.started_at.date() == today
             )
+            if created_today >= config.MAX_BATCHES_PER_PLANT_PER_DAY:
+                raise ValueError(
+                    f"Daily batch limit ({config.MAX_BATCHES_PER_PLANT_PER_DAY}) reached for '{plant}' - "
+                    'delete a completed/stopped batch or try again tomorrow.'
+                )
 
         if scenario_profile != 'Normal' and drifting_parameter is None:
             drifting_parameter = config.DEFAULT_DRIFTING_PARAMETER
@@ -55,7 +63,19 @@ class RunningBatchRegistry:
         self._batches[running_batch_id] = batch
         self._simulators[running_batch_id] = simulator
         self._history[running_batch_id] = []
-        self._append_reading(batch, simulator, 0)
+
+        # Instantly pre-fill the first config.PREFILL_MINUTES of history (same
+        # simulator math tick_all() would apply minute-by-minute over real
+        # time, just run synchronously in one pass) - so KPI Prediction and
+        # Process Monitoring's forecast have a full 30-minute window (and
+        # something to show) from the very first read after creation,
+        # instead of a several-minute real-time wait. Confidence still
+        # honestly reads Low this early (see kpi_prediction_agent's
+        # _evidence_ceiling) - this skips the WAIT, not the batch's actual
+        # progress; ticking continues normally from here on.
+        prefill_t = min(config.PREFILL_MINUTES, batch.target_duration_minutes)
+        for t in range(0, prefill_t + 1):
+            self._append_reading(batch, simulator, t)
         return batch
 
     def _append_reading(self, batch: RunningBatch, simulator: BatchSimulator, t: int) -> None:
@@ -74,6 +94,7 @@ class RunningBatchRegistry:
             if next_t >= batch.target_duration_minutes:
                 self._append_reading(batch, simulator, batch.target_duration_minutes)
                 batch.status = 'Completed'
+                batch.terminal_at = datetime.now(timezone.utc)
                 newly_completed.append(batch.running_batch_id)
             else:
                 self._append_reading(batch, simulator, next_t)
@@ -92,6 +113,7 @@ class RunningBatchRegistry:
         batch = self._batches.get(running_batch_id)
         if batch is not None and batch.status == 'Running':
             batch.status = 'Stopped'
+            batch.terminal_at = datetime.now(timezone.utc)
         return batch
 
     def remove(self, running_batch_id: str) -> None:

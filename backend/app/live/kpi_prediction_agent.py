@@ -483,6 +483,18 @@ HISTORY_MINUTES = 5
 # principle the real Deviation Agent's alert_registry already applies.
 _reasoning_cache: dict[tuple[str, str], tuple[tuple, dict]] = {}
 
+
+def purge_reasoning_cache(running_batch_id: str) -> None:
+    """Drops every cached reasoning entry (one per KPI, up to 5) for a batch
+    that's being fully removed - called from app.live.service.
+    prune_old_demo_batches (and delete_running_batch) alongside registry.
+    remove() and the Postgres alert/history cleanup, so this cache doesn't
+    grow forever across a long-running continuous demo. Safe to call for a
+    batch with no cached entries at all (e.g. one that never had a KPI
+    prediction requested)."""
+    for key in [k for k in _reasoning_cache if k[0] == running_batch_id]:
+        del _reasoning_cache[key]
+
 # Nominal batch length, in minutes - still used below by _evidence_ceiling
 # to judge "how much of a batch has actually happened yet" for confidence.
 # (The phase-correct baseline formulas that used to live in this section -

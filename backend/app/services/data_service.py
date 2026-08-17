@@ -141,11 +141,30 @@ def get_batch_kpis_list(state: AppState) -> list[BatchKPIs]:
     return [_build_batch_kpis(state, batch_id) for batch_id in sorted(state.batch_kpis_df.index)]
 
 
+# Continuous-demo batches (app.live.scheduler's auto-replenish loop) are
+# tagged this way in batch_kpis.generation_method_version when persisted
+# (app.live.history_writer). Excluded from every Plant KPI aggregate below so
+# those numbers reflect only the real historical dataset (+ anything
+# manually created) - never affected by the demo auto-replenishing or by its
+# retention policy later deleting an old demo batch's row (see
+# app.live.service.prune_old_demo_batches). Matches app.live.config.
+# DEMO_BATCH_GENERATION_TAG exactly - ported, not imported, since the live
+# plane is the one allowed to import from the historical plane, not the
+# reverse (see app/live/ml_bridge.py's own docstring on that direction).
+_DEMO_BATCH_GENERATION_TAG = 'live_completion_v2'
+
+
+def _exclude_demo_batches(state: AppState, batch_ids: pd.Index) -> pd.Index:
+    tags = state.batch_kpis_df['generation_method_version'].reindex(batch_ids)
+    return batch_ids[tags != _DEMO_BATCH_GENERATION_TAG]
+
+
 def get_plant_kpi_rollup(state: AppState, plant: str) -> PlantKpiRollup | None:
     # Plant Performance is deliberately NOT a stored column - it's a rollup query
     # over batch_kpis, computed here rather than duplicated in the frontend, per
     # docs/batch-kpis-design.md §4.
     plant_batch_ids = state.batches_df.index[state.batches_df['plant'] == plant]
+    plant_batch_ids = _exclude_demo_batches(state, plant_batch_ids)
     matching = state.batch_kpis_df.loc[state.batch_kpis_df.index.intersection(plant_batch_ids)]
     if matching.empty:
         return None
@@ -181,6 +200,9 @@ def get_plant_period_kpis(
     plant_df = state.batches_df[state.batches_df['plant'] == plant]
     if plant_df.empty:
         return None  # unknown plant -> router raises 404
+    plant_df = plant_df.loc[_exclude_demo_batches(state, plant_df.index)]
+    if plant_df.empty:
+        return None
 
     # OEE/Quality Score live in batch_kpis_df (indexed by batch_id, same
     # index as plant_df here) - reindex aligns them 1:1 with plant_df's rows,

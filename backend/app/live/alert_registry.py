@@ -349,5 +349,36 @@ class AlertRegistry:
     def reject(self, alert_id: str) -> DeviationAlert | None:
         return self._set_human_decision(alert_id, 'Rejected')
 
+    @staticmethod
+    def delete_older_than(cutoff: datetime) -> int:
+        """Deletes every alert (Open or Resolved, any batch/plant) created
+        before `cutoff`, regardless of its batch's own retention status -
+        this is a separate, TIME-based sweep from delete_for_batch's
+        per-batch delete, called continuously (every scheduler tick) rather
+        than only when a specific batch ages out. Returns the number of rows
+        deleted, for logging/testing. If an alert for a still-actively-
+        deviating parameter gets swept this way, the next tick's
+        sync_from_assessment/sync_from_kpi_prediction simply creates a fresh
+        one (no existing 'Open' row is found) - self-healing, not a gap."""
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute('DELETE FROM alerts WHERE created_at < %s', (cutoff,))
+            deleted = cur.rowcount
+            conn.commit()
+        return deleted
+
+    @staticmethod
+    def delete_for_batch(running_batch_id: str) -> None:
+        """Deletes EVERY alert ever created for this batch (Open or Resolved,
+        any parameter/KPI) - unlike everything else in this class, an actual
+        delete, not an insert/update. Used only by the continuous-demo
+        retention policy (app.live.service.prune_old_demo_batches) and
+        delete_running_batch, once a batch has fully aged out of the "recent
+        N" window - this is the one place this module's own docstring's
+        "nothing here deletes anything" stops being true, deliberately, so
+        the alerts table doesn't grow forever across a long-running demo."""
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute('DELETE FROM alerts WHERE running_batch_id = %s', (running_batch_id,))
+            conn.commit()
+
 
 alert_registry = AlertRegistry()

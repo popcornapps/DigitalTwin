@@ -90,6 +90,18 @@ class RunningBatch:
     # One entry per parameter, overwritten each tick - the Deviation Agent's
     # current output, same "latest only" convention as latest_prediction.
     latest_assessments: list[ParameterAssessment] = field(default_factory=list)
+    # The KPI Prediction Agent's last full result (same dict shape
+    # KpiPredictionResponse expects) - overwritten each tick by scheduler.py,
+    # same "latest only" convention as latest_prediction/latest_assessments.
+    # app.routers.kpi_prediction reads this directly instead of calling
+    # kpi_prediction_agent.predict_kpis() itself, so a page view/refresh
+    # never blocks on-demand waiting for a slow Agent LLM call to finish -
+    # all of that work already happened in the background, on the
+    # scheduler's own clock, whether or not anyone was looking. None until
+    # the first tick after creation computes it (briefly, even though 30+
+    # minutes of history already exist from the instant pre-fill - just
+    # hasn't been processed by the scheduler yet).
+    latest_kpi_prediction: dict | None = None
     # Wall-clock time this batch's completion was successfully written to
     # Postgres (app.live.history_writer), or None if never persisted (still
     # Running/Stopped, or a persist attempt failed) - a debug signal, not a
@@ -104,6 +116,24 @@ class RunningBatch:
     # be stored here so history_writer.delete_persisted_batch knows which
     # historical row to remove.
     history_batch_id: str | None = None
+    # Wall-clock time this batch left 'Running' (either naturally Completed
+    # or manually Stopped) - None while still Running. Unlike persisted_at
+    # (which is Completed-and-successfully-persisted only), this is set for
+    # BOTH terminal outcomes, so the demo-batch retention policy (keep the
+    # latest N finished demo batches, purge older ones - see
+    # app.live.service.prune_old_demo_batches) has one consistent timestamp
+    # to sort by regardless of how a batch ended.
+    terminal_at: datetime | None = None
+    # True if this batch was the first to naturally complete for its plant on
+    # its calendar day - history_writer.persist_completed_batch tags such a
+    # batch as PERMANENT historical data (counted in Plant KPI/Batch
+    # Explorer, like the original dataset) instead of temporary demo data.
+    # Set once, right after a successful persist (see scheduler.py) - never
+    # for Stopped batches (only naturally-Completed ones are ever persisted
+    # at all - see history_writer.py's own docstring). service.
+    # prune_old_demo_batches skips any batch with this set, so it's never
+    # deleted by the temporary-demo-batch retention policy.
+    is_daily_permanent: bool = False
 
 
 @dataclass

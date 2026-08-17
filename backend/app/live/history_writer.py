@@ -34,7 +34,7 @@ production run.
 import asyncio
 import hashlib
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -46,6 +46,14 @@ from app.live.models import RunningBatch
 from app.state import AppState
 
 GENERATION_METHOD_VERSION = 'live_completion_v2'
+# Tag for the ONE demo batch per plant per calendar day that graduates to
+# permanent historical data (see _is_first_completion_today below) - counted
+# in Plant KPI/Batch Explorer like the original dataset, and never purged by
+# the temporary-demo-batch retention policy (app.live.service.
+# prune_old_demo_batches). Every other live-completed batch that same day
+# keeps the regular GENERATION_METHOD_VERSION tag above (temporary, excluded
+# from Plant KPI - see app.services.data_service._exclude_demo_batches).
+DAILY_PERMANENT_GENERATION_VERSION = 'live_completion_v2_daily'
 
 ASSAY_FLOOR_PCT = 90.0
 ASSAY_CEILING_PCT = 101.0
@@ -168,7 +176,29 @@ def _deviation_fields(batch: RunningBatch) -> tuple[str, str]:
     return f'Live_{batch.drifting_parameter}', batch.scenario_profile
 
 
-async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> None:
+def _is_first_completion_today(app_state: AppState, plant: str) -> bool:
+    """True if no batch has yet been tagged DAILY_PERMANENT_GENERATION_VERSION
+    for this plant on today's calendar date. Checked directly against
+    app_state.batches_df/batch_kpis_df (not a separate in-memory counter) so
+    this is correct even right after a server restart - batches_df is
+    reloaded from Postgres at startup and kept in sync with every persist
+    via _append_to_app_state, so it's always the authoritative record of
+    which batch (if any) already graduated today."""
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    df = app_state.batches_df
+    todays_ids = df.index[(df['plant'] == plant) & (df['batch_start_datetime'].str[:10] == today_str)]
+    if len(todays_ids) == 0:
+        return True
+    tags = app_state.batch_kpis_df['generation_method_version'].reindex(todays_ids)
+    return not bool((tags == DAILY_PERMANENT_GENERATION_VERSION).any())
+
+
+async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> bool:
+    """Returns True if this batch was tagged as the day's one PERMANENT
+    batch (see _is_first_completion_today), False if it was tagged as a
+    regular temporary demo batch. Callers (scheduler.py) use this to set
+    RunningBatch.is_daily_permanent, which exempts it from the temporary-
+    demo-batch retention policy."""
     # Lazy imports - kpi_prediction_agent/service both eventually import this
     # module (service.py imports history_writer for delete_persisted_batch;
     # kpi_prediction_agent imports service.py for get_recent_readings) - a
@@ -225,6 +255,8 @@ async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> N
     fault_onset = find_fault_onset(window, parameter_limits)
 
     history_batch_id = _next_par_id(app_state)
+    is_daily_permanent = _is_first_completion_today(app_state, batch.plant)
+    generation_method_version = DAILY_PERMANENT_GENERATION_VERSION if is_daily_permanent else GENERATION_METHOD_VERSION
     theoretical_output_kg = float(app_state.batches_df.loc['PAR-GOLDEN', 'theoretical_output_kg'])
     assay_target, assay_upper = _assay_spec()
 
@@ -292,7 +324,7 @@ async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> N
         'oee_pct': round(oee_pct, 2),
         'total_energy_kwh': round(energy_kwh, 2),
         'sec_kwh_per_kg': round(sec_kwh_per_kg, 4),
-        'generation_method_version': GENERATION_METHOD_VERSION,
+        'generation_method_version': generation_method_version,
         # ML KPI Prediction Agent's last-tick guess - captured purely for
         # comparison against the real values above, no longer the source of
         # them. None for any KPI missing from the prediction (shouldn't
@@ -365,6 +397,7 @@ async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> N
     _append_to_app_state(app_state, batches_row, kpis_row)
     batch.persisted_at = datetime.now(batch.started_at.tzinfo)
     batch.history_batch_id = history_batch_id
+    return is_daily_permanent
 
 
 def _append_to_app_state(app_state: AppState, batches_row: dict, kpis_row: dict) -> None:

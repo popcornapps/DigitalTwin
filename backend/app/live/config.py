@@ -15,6 +15,7 @@ scripts/generate-dataset/config.ts - kept in sync by hand since that file is
 the historical generator's own source of truth and isn't imported here.
 """
 import os
+from datetime import timedelta
 
 from app.db import get_connection
 
@@ -176,4 +177,72 @@ DEFAULT_SEED_BATCHES = [
     {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': 'flow_rate'},
     {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': 'filter_differential_pressure'},
     {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': 'shaker_vibration_frequency'},
+]
+
+# --- Continuous demo mode - see the running-batch design doc's "always-on
+# demo" revision. All 4 settings below only affect the automatic-replenish
+# path (app.live.service.create_random_demo_batch / prune_old_demo_batches,
+# invoked from scheduler.py) - manual batch creation via the API is
+# unaffected. ---
+
+# How many minutes of history a NEW batch gets instantly, at creation time,
+# instead of waiting on real ticks - matches app.config.LOOKBACK_MINUTES (30)
+# so a full feature window exists from the very first read. Ported, not
+# imported (registry.py stays decoupled from app.config - see its own
+# docstring), kept in sync by hand like every other cross-plane constant.
+PREFILL_MINUTES = 30
+
+# When True, the scheduler creates one replacement batch (drawn from
+# DEMO_SCENARIO_POOL below) the instant a batch naturally Completes, so the
+# demo runs unattended forever without anyone needing to click "create
+# batch." Toggle off (e.g. for automated testing) without a code change.
+AUTO_REPLENISH_BATCHES = True
+
+# How many finished (Completed OR Stopped) demo batches to keep fully
+# available - in memory (telemetry, latest prediction/assessments) and in
+# Postgres (alerts, batches/batch_kpis) - for "recently finished" inspection
+# in the UI. The moment an older one ages out past this count, everything
+# about it is deleted (app.live.service.prune_old_demo_batches) - keeps both
+# memory and Postgres bounded no matter how long the demo runs. Applies
+# equally to naturally-Completed and manually-Stopped batches (sorted by
+# RunningBatch.terminal_at), not just one or the other.
+DEMO_BATCH_RETENTION_COUNT = 10
+
+# Matches history_writer.GENERATION_METHOD_VERSION exactly - the tag written
+# to batch_kpis.generation_method_version for every live-completed batch.
+# Used by app.services.data_service to EXCLUDE continuously-cycling demo
+# batches from the Plant KPI rollup/period aggregates, so those numbers keep
+# reflecting only the real historical dataset (+ anything manually created)
+# and are never affected by auto-replenishment or by prune_old_demo_batches
+# deleting an old demo batch's row later. Ported, not imported (same
+# cross-module constant-duplication convention used everywhere else here).
+DEMO_BATCH_GENERATION_TAG = 'live_completion_v2'
+
+# Weighted pool the scheduler draws from when auto-replenishing - covers
+# Normal plus both severities of all 8 causal parameters (the original 4 +
+# the 4 added by the 12-parameter causal-formula revision), so a long-running
+# unattended demo actually exercises the full range of KPI Prediction/
+# Process Monitoring behavior instead of only ever showing DEFAULT_SEED_
+# BATCHES' fixed 4 scenarios. Normal weighted higher than any single fault,
+# roughly matching the ~25% Normal proportion scripts/generate-synthetic-kpi-
+# data/generate_synthetic_kpi_data.py's SCENARIO_WEIGHTS already uses.
+# How long an alert (Open or Resolved, any batch, temporary or permanent)
+# stays in Postgres before app.live.service.purge_old_alerts deletes it -
+# independent of DEMO_BATCH_RETENTION_COUNT above (that's a per-batch,
+# count-based policy; this is a global, time-based one, applying even to a
+# still-Running batch's own alerts). Alerts/recommendations/AI explanations
+# all live in the same `alerts` row (see app.live.models.DeviationAlert), so
+# one delete covers all three.
+ALERT_RETENTION = timedelta(hours=24)
+
+DEMO_SCENARIO_POOL = [
+    {'scenario_profile': 'Normal', 'drifting_parameter': None, 'weight': 5},
+] + [
+    {'scenario_profile': severity, 'drifting_parameter': param, 'weight': 1}
+    for param in (
+        'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
+        'filter_differential_pressure', 'shaker_vibration_frequency',
+        'inlet_air_humidity', 'compressed_air_pressure',
+    )
+    for severity in ('Warning', 'Critical')
 ]

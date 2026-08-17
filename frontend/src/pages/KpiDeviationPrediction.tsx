@@ -8,9 +8,33 @@
 // batch are honestly less reliable than ones made later - that's reflected
 // in the confidence indicator, not hidden.
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Clock, Gauge, Loader2, XCircle } from 'lucide-react';
 import { fetchRunningBatches, fetchKpiPrediction, fetchTickIntervalSeconds, fetchAiMode, setAiMode } from '../lib/api';
 import type { RunningBatchSummary, KpiPredictionResponse, KpiPrediction, KpiKey, AIMode } from '../lib/api';
+
+// localStorage backstop for the URL param: navigating to a DIFFERENT page
+// (e.g. via the sidebar) and back starts that page's URL fresh with no
+// ?batch= at all - the query string doesn't travel with you the way it does
+// on a plain same-page refresh. localStorage does survive that, so it's
+// consulted as a second choice right after the URL, before falling back to
+// picking a batch from scratch.
+const LAST_BATCH_STORAGE_KEY = 'kpiDeviationPrediction.selectedRunningBatchId';
+
+// Picks which batch should be selected: the URL's own `batch` param first
+// (an explicit/shareable choice), then the last one persisted to
+// localStorage, then the first RUNNING batch (never a Completed/Stopped
+// one, unlike the old data[0] default) - only if none of those are still a
+// real batch in the current list.
+function pickDefaultBatchId(data: RunningBatchSummary[], urlBatchId: string | null): string | null {
+  const storedBatchId = localStorage.getItem(LAST_BATCH_STORAGE_KEY);
+  for (const candidate of [urlBatchId, storedBatchId]) {
+    if (candidate && data.some((b) => b.running_batch_id === candidate)) return candidate;
+  }
+  const running = data.find((b) => b.status === 'Running');
+  if (running) return running.running_batch_id;
+  return data.length > 0 ? data[0].running_batch_id : null;
+}
 
 const LIVE_POLL_INTERVAL_MS = 3000;
 
@@ -58,7 +82,25 @@ export default function KpiDeviationPrediction() {
   const [runningBatches, setRunningBatches] = useState<RunningBatchSummary[]>([]);
   const [runningBatchesLoading, setRunningBatchesLoading] = useState(true);
   const [runningBatchesError, setRunningBatchesError] = useState<string | null>(null);
-  const [selectedRunningBatchId, setSelectedRunningBatchId] = useState<string | null>(null);
+
+  // Selected batch lives in the URL (?batch=...), not local state - survives
+  // a page refresh and is restored on revisit, instead of resetting to
+  // whatever the mount effect below happens to pick first.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedRunningBatchId = searchParams.get('batch');
+  const setSelectedRunningBatchId = (id: string | null) => {
+    if (id) localStorage.setItem(LAST_BATCH_STORAGE_KEY, id);
+    else localStorage.removeItem(LAST_BATCH_STORAGE_KEY);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set('batch', id);
+        else next.delete('batch');
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   const [prediction, setPrediction] = useState<KpiPredictionResponse | null>(null);
   const [waitingForHistory, setWaitingForHistory] = useState(false);
@@ -109,7 +151,8 @@ export default function KpiDeviationPrediction() {
       .then((data) => {
         if (cancelled) return;
         setRunningBatches(data);
-        setSelectedRunningBatchId((prev) => prev ?? (data.length > 0 ? data[0].running_batch_id : null));
+        const defaultId = pickDefaultBatchId(data, searchParams.get('batch'));
+        if (defaultId !== searchParams.get('batch')) setSelectedRunningBatchId(defaultId);
       })
       .catch((err) => {
         if (!cancelled) setRunningBatchesError(err instanceof Error ? err.message : String(err));
