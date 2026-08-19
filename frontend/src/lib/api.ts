@@ -491,3 +491,24 @@ export interface KpiPredictionResponse {
 
 export const fetchKpiPrediction = (runningBatchId: string): Promise<KpiPredictionResponse> =>
   fetchJson(`/kpi-prediction/${encodeURIComponent(runningBatchId)}`);
+
+// --- AI Copilot ---
+// Conversational RAG-style chat over currently running batches (backend/app/copilot) -
+// not scoped to any one batch: the model resolves which running batch(es) a
+// question is about itself via its own list_running_batches tool.
+
+export interface CopilotChatResponse {
+  reply: string;
+  conversation_id: string;
+}
+
+export const sendCopilotMessage = (
+  message: string,
+  conversationId: string | null,
+  persona: string,
+): Promise<CopilotChatResponse> =>
+  postJson('/copilot/chat', {
+    message,
+    persona,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
+  });

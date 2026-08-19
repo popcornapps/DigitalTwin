@@ -162,22 +162,21 @@ NOISE_REVERSION_RATE = 0.15
 # subsystem - see registry.py's own docstring.
 MAX_BATCHES_PER_PLANT_PER_DAY = 20
 
-# Default seed batches created once at backend startup - all at the single
-# supported plant (see PLANTS above). Each one names its own drifting_parameter
-# explicitly (rather than leaving it None, which would fall back to
-# DEFAULT_DRIFTING_PARAMETER='temperature' for every one of them) so a fresh
-# restart demonstrates deviations spread across both the original 4 and the
-# 8 added in Step 1 - a mix of cascading (Temperature/Flow Rate, which also
-# visibly drift their correlated new parameters) and isolated (Filter DP,
-# Shaker) examples, and both "has a historical root-cause match" (the
-# original 2) and "novel/unclassified deviation" (the new 2) LLM-reasoning
-# paths.
-DEFAULT_SEED_BATCHES = [
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': 'temperature'},
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': 'flow_rate'},
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Critical', 'drifting_parameter': 'filter_differential_pressure'},
-    {'plant': 'Hyderabad Plant', 'scenario_profile': 'Warning', 'drifting_parameter': 'shaker_vibration_frequency'},
-]
+# The process parameters the live simulator can actually drift - shared by
+# DEMO_SCENARIO_POOL below (auto-replenish) and service.seed_default_batches
+# (startup seeding), so both draw randomly from the exact same pool instead
+# of keeping two separate parameter lists in sync by hand.
+FAULT_CAPABLE_PARAMETERS = (
+    'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
+    'filter_differential_pressure', 'shaker_vibration_frequency',
+    'inlet_air_humidity', 'compressed_air_pressure',
+)
+
+# How many default batches service.seed_default_batches creates once at
+# backend startup - one Critical, one Warning (see that function), each with
+# a randomly chosen, distinct parameter from FAULT_CAPABLE_PARAMETERS so a
+# fresh restart doesn't always reproduce the exact same fixed scenario.
+DEFAULT_SEED_BATCH_COUNT = 2
 
 # --- Continuous demo mode - see the running-batch design doc's "always-on
 # demo" revision. All 4 settings below only affect the automatic-replenish
@@ -222,10 +221,10 @@ DEMO_BATCH_GENERATION_TAG = 'live_completion_v2'
 # Normal plus both severities of all 8 causal parameters (the original 4 +
 # the 4 added by the 12-parameter causal-formula revision), so a long-running
 # unattended demo actually exercises the full range of KPI Prediction/
-# Process Monitoring behavior instead of only ever showing DEFAULT_SEED_
-# BATCHES' fixed 4 scenarios. Normal weighted higher than any single fault,
-# roughly matching the ~25% Normal proportion scripts/generate-synthetic-kpi-
-# data/generate_synthetic_kpi_data.py's SCENARIO_WEIGHTS already uses.
+# Process Monitoring behavior instead of only ever showing the same fixed
+# scenario(s). Normal weighted higher than any single fault, roughly matching
+# the ~25% Normal proportion scripts/generate-synthetic-kpi-data/
+# generate_synthetic_kpi_data.py's SCENARIO_WEIGHTS already uses.
 # How long an alert (Open or Resolved, any batch, temporary or permanent)
 # stays in Postgres before app.live.service.purge_old_alerts deletes it -
 # independent of DEMO_BATCH_RETENTION_COUNT above (that's a per-batch,
@@ -239,10 +238,6 @@ DEMO_SCENARIO_POOL = [
     {'scenario_profile': 'Normal', 'drifting_parameter': None, 'weight': 5},
 ] + [
     {'scenario_profile': severity, 'drifting_parameter': param, 'weight': 1}
-    for param in (
-        'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
-        'filter_differential_pressure', 'shaker_vibration_frequency',
-        'inlet_air_humidity', 'compressed_air_pressure',
-    )
+    for param in FAULT_CAPABLE_PARAMETERS
     for severity in ('Warning', 'Critical')
 ]

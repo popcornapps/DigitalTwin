@@ -153,10 +153,41 @@ def get_batch_kpis_list(state: AppState) -> list[BatchKPIs]:
 # reverse (see app/live/ml_bridge.py's own docstring on that direction).
 _DEMO_BATCH_GENERATION_TAG = 'live_completion_v2'
 
+# Matches app.live.history_writer.DAILY_PERMANENT_GENERATION_VERSION exactly -
+# ported, not imported, same reasoning as _DEMO_BATCH_GENERATION_TAG above.
+_DEMO_BATCH_DAILY_PERMANENT_TAG = 'live_completion_v2_daily'
+
+_BATCH_START_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000Z'
+
+
+def _demo_batch_cutover(state: AppState) -> pd.Timestamp | None:
+    """The earliest batch_start_datetime among daily-permanent batches - the
+    real moment the continuous-generation/retention system started running.
+    This can predate that feature's own git commit (code gets live-tested on
+    the running server before being formally committed) - so it's derived
+    from the data itself, not a hardcoded date. live_completion_v2-tagged
+    batches OLDER than this cutover predate the temporary/permanent
+    distinction entirely: the retention system didn't exist yet when they
+    were created, so they were never actually disposable "demo churn" - they
+    only carry the same tag value the newer system later repurposed to mean
+    "exclude from Plant KPI." None if no daily-permanent batch exists yet."""
+    daily_ids = state.batch_kpis_df.index[state.batch_kpis_df['generation_method_version'] == _DEMO_BATCH_DAILY_PERMANENT_TAG]
+    if len(daily_ids) == 0:
+        return None
+    starts = pd.to_datetime(state.batches_df.loc[daily_ids, 'batch_start_datetime'], format=_BATCH_START_DATETIME_FORMAT)
+    return starts.min()
+
 
 def _exclude_demo_batches(state: AppState, batch_ids: pd.Index) -> pd.Index:
     tags = state.batch_kpis_df['generation_method_version'].reindex(batch_ids)
-    return batch_ids[tags != _DEMO_BATCH_GENERATION_TAG]
+    is_temp = tags == _DEMO_BATCH_GENERATION_TAG
+
+    cutover = _demo_batch_cutover(state)
+    if cutover is not None:
+        starts = pd.to_datetime(state.batches_df['batch_start_datetime'].reindex(batch_ids), format=_BATCH_START_DATETIME_FORMAT)
+        is_temp = is_temp & (starts >= cutover)
+
+    return batch_ids[~is_temp]
 
 
 def get_plant_kpi_rollup(state: AppState, plant: str) -> PlantKpiRollup | None:

@@ -48,7 +48,10 @@ export default function Settings() {
   const loadBatches = () => {
     fetchRunningBatches()
       .then((data) => {
-        setRunningBatches(data);
+        // Completed/Stopped batches already have a proper home in Batch
+        // Explorer - this page's job is managing what's currently running,
+        // so anything else here is dead weight with no Stop button anyway.
+        setRunningBatches(data.filter((b) => b.status === 'Running'));
         setListError(null);
       })
       .catch((err) => setListError(err instanceof Error ? err.message : String(err)))

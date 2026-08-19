@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Activity, CheckCircle, AlertTriangle, Package, BarChart3,
   Zap, Clock, ShieldAlert, Award, FileText,
@@ -339,15 +339,15 @@ export default function Dashboard() {
       {/* 1. KPI Cards Row */}
       {selectedPersona === 'Plant Manager' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-          <KPICard title="OEE (This Month)" value={thisMonthKpi ? `${thisMonthKpi.oee_pct}%` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={thisMonthKpi ? periodKpiNote('Averaged', `${thisMonthKpi.oee_pct}%`, thisMonthKpi) : undefined} />
-          <KPICard title="OEE (Today)" value={todayKpi ? `${todayKpi.oee_pct}%` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={todayKpi ? periodKpiNote('Averaged', `${todayKpi.oee_pct}%`, todayKpi) : undefined} />
-          <KPICard title="OEE (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.oee_pct}%` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={currentShiftKpi ? periodKpiNote('Averaged', `${currentShiftKpi.oee_pct}%`, currentShiftKpi) : undefined} />
-          <KPICard title="Quality Score (This Month)" value={thisMonthKpi ? `${thisMonthKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={thisMonthKpi ? periodKpiNote('Averaged', `${thisMonthKpi.quality_score_pct}%`, thisMonthKpi) : undefined} />
-          <KPICard title="Quality Score (Today)" value={todayKpi ? `${todayKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={todayKpi ? periodKpiNote('Averaged', `${todayKpi.quality_score_pct}%`, todayKpi) : undefined} />
-          <KPICard title="Quality Score (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={currentShiftKpi ? periodKpiNote('Averaged', `${currentShiftKpi.quality_score_pct}%`, currentShiftKpi) : undefined} />
-          <KPICard title="Production (This Month)" value={thisMonthKpi ? `${thisMonthKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest month in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={thisMonthKpi ? periodKpiNote('Summed', `${thisMonthKpi.total_production_kg.toLocaleString()} kg`, thisMonthKpi) : undefined} />
-          <KPICard title="Production (Today)" value={todayKpi ? `${todayKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest day in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={todayKpi ? periodKpiNote('Summed', `${todayKpi.total_production_kg.toLocaleString()} kg`, todayKpi) : undefined} />
-          <KPICard title="Production (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest completed shift" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={currentShiftKpi ? periodKpiNote('Summed', `${currentShiftKpi.total_production_kg.toLocaleString()} kg`, currentShiftKpi) : undefined} />
+          <KPICard title="OEE (This Month)" value={thisMonthKpi ? `${thisMonthKpi.oee_pct}%` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={thisMonthKpi ? periodKpiNote('Averaged', `${thisMonthKpi.oee_pct}%`, thisMonthKpi) : undefined} floatingTooltip />
+          <KPICard title="OEE (Today)" value={todayKpi ? `${todayKpi.oee_pct}%` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={todayKpi ? periodKpiNote('Averaged', `${todayKpi.oee_pct}%`, todayKpi) : undefined} floatingTooltip />
+          <KPICard title="OEE (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.oee_pct}%` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Overall equipment effectiveness" icon={<BarChart3 />} color="text-blue-600" bg="bg-blue-50" note={currentShiftKpi ? periodKpiNote('Averaged', `${currentShiftKpi.oee_pct}%`, currentShiftKpi) : undefined} floatingTooltip />
+          <KPICard title="Quality Score (This Month)" value={thisMonthKpi ? `${thisMonthKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={thisMonthKpi ? periodKpiNote('Averaged', `${thisMonthKpi.quality_score_pct}%`, thisMonthKpi) : undefined} floatingTooltip />
+          <KPICard title="Quality Score (Today)" value={todayKpi ? `${todayKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={todayKpi ? periodKpiNote('Averaged', `${todayKpi.quality_score_pct}%`, todayKpi) : undefined} floatingTooltip />
+          <KPICard title="Quality Score (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.quality_score_pct}%` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Production quality" icon={<CheckCircle />} color="text-teal-600" bg="bg-teal-50" note={currentShiftKpi ? periodKpiNote('Averaged', `${currentShiftKpi.quality_score_pct}%`, currentShiftKpi) : undefined} floatingTooltip />
+          <KPICard title="Production (This Month)" value={thisMonthKpi ? `${thisMonthKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={thisMonthKpi ? thisMonthKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest month in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={thisMonthKpi ? periodKpiNote('Summed', `${thisMonthKpi.total_production_kg.toLocaleString()} kg`, thisMonthKpi) : undefined} floatingTooltip />
+          <KPICard title="Production (Today)" value={todayKpi ? `${todayKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={todayKpi ? todayKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest day in the data" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={todayKpi ? periodKpiNote('Summed', `${todayKpi.total_production_kg.toLocaleString()} kg`, todayKpi) : undefined} floatingTooltip />
+          <KPICard title="Production (Current Shift)" value={currentShiftKpi ? `${currentShiftKpi.total_production_kg.toLocaleString()} kg` : '—'} trend="flat" trendValue={currentShiftKpi ? currentShiftKpi.period_label : periodKpiError ? 'Error' : 'Loading'} desc="Latest completed shift" icon={<Package />} color="text-indigo-600" bg="bg-indigo-50" note={currentShiftKpi ? periodKpiNote('Summed', `${currentShiftKpi.total_production_kg.toLocaleString()} kg`, currentShiftKpi) : undefined} floatingTooltip />
           <KPICard title="Active Alerts" value={openAlerts ? String(openAlerts.length) : '—'} trend="flat" trendValue={openAlerts ? (criticalAlertCount > 0 ? `${criticalAlertCount} critical` : 'None critical') : 'Loading'} desc="Current operational warnings" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" />
         </div>
       )}
@@ -788,27 +788,69 @@ export default function Dashboard() {
 }
 
 function KPICard({
-  title, value, trend: _trend, trendValue, desc, icon, color, bg, note
+  title, value, trend: _trend, trendValue, desc, icon, color, bg, note, floatingTooltip
 }: {
-  title: string, value: string, trend?: 'up' | 'down' | 'flat', trendValue: string, desc: string, icon: React.ReactNode, color: string, bg: string, note?: string
+  title: string, value: string, trend?: 'up' | 'down' | 'flat', trendValue: string, desc: string, icon: React.ReactNode, color: string, bg: string, note?: string,
+  // Trial: click/touch-triggered tooltip that floats above the card
+  // (absolute position, no layout shift) instead of the default expand-in-
+  // place behavior below. Only one card opts into this for now (see its call
+  // site) while it's being tried out - every other card is untouched.
+  floatingTooltip?: boolean
 }) {
   const hasNote = !!note;
   // Revealed in normal document flow (not an absolutely-positioned overlay/modal)
   // so it pushes the card taller instead of covering the value/description above it.
   const [showNote, setShowNote] = useState(false);
+  const infoRef = useRef<HTMLDivElement>(null);
+
+  // Floating variant only: close on a click/tap anywhere outside the icon/
+  // tooltip - the default variant doesn't need this since its note is
+  // in-flow and toggled by the same button that opened it.
+  useEffect(() => {
+    if (!floatingTooltip || !showNote) return;
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      if (infoRef.current && !infoRef.current.contains(e.target as Node)) {
+        setShowNote(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
+  }, [floatingTooltip, showNote]);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex flex-col justify-between hover:shadow-md transition-all duration-200">
       <div className="flex justify-between items-start mb-2">
         <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{title}</p>
         {hasNote ? (
-          <button
-            type="button"
-            onClick={() => setShowNote((s) => !s)}
-            className="text-indigo-400 hover:text-indigo-600 transition-colors"
-          >
-            <Info size={14} />
-          </button>
+          floatingTooltip ? (
+            <div ref={infoRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowNote((s) => !s)}
+                className="text-indigo-400 hover:text-indigo-600 transition-colors"
+              >
+                <Info size={14} />
+              </button>
+              {showNote && (
+                <div className="absolute bottom-full right-0 mb-2 w-56 z-20 rounded-lg bg-white text-gray-700 text-2xs font-bold leading-snug p-3 shadow-lg border border-gray-200">
+                  {note}
+                  <div className="absolute top-full right-3 -mt-1 w-2 h-2 bg-white border-b border-r border-gray-200 rotate-45" />
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowNote((s) => !s)}
+              className="text-indigo-400 hover:text-indigo-600 transition-colors"
+            >
+              <Info size={14} />
+            </button>
+          )
         ) : (
           <div className={`p-1.5 rounded-lg ${bg} ${color}`}>
             {React.cloneElement(icon as React.ReactElement, { size: 16 })}
@@ -829,7 +871,7 @@ function KPICard({
           </div>
         </div>
         <p className="text-2xs font-semibold text-gray-400 leading-tight mt-1">{desc}</p>
-        {hasNote && showNote && (
+        {hasNote && showNote && !floatingTooltip && (
           <p className="text-2xs font-semibold text-indigo-500 leading-snug mt-2 pt-2 border-t border-gray-100">{note}</p>
         )}
       </div>

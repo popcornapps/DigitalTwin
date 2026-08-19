@@ -223,8 +223,12 @@ export default function ProcessMonitoring() {
     fetchRunningBatches()
       .then((data) => {
         if (cancelled) return;
-        setRunningBatches(data);
-        const defaultId = pickDefaultBatchId(data, searchParams.get('batch'));
+        // Completed/Stopped batches belong in Batch Explorer, not this
+        // live-telemetry selector - matches this page's own stated scope
+        // (see the comment above NormalizedPoint).
+        const running = data.filter((b) => b.status === 'Running');
+        setRunningBatches(running);
+        const defaultId = pickDefaultBatchId(running, searchParams.get('batch'));
         if (defaultId !== searchParams.get('batch')) setSelectedRunningBatchId(defaultId);
       })
       .catch((err) => {

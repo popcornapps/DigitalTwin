@@ -11,7 +11,7 @@ from app.auth import get_current_user
 from app.config import CORS_ORIGINS
 from app.live import scheduler as live_scheduler
 from app.live import service as live_service
-from app.routers import alerts, auth as auth_router, batch_kpis, batches, kpi_prediction, live_batches, parameters, settings
+from app.routers import alerts, auth as auth_router, batch_kpis, batches, copilot, kpi_prediction, live_batches, parameters, settings
 from app.state import app_state
 
 # Populated only in the single-container Docker build (see Dockerfile), which
@@ -66,6 +66,7 @@ app.include_router(live_batches.router, dependencies=protected)
 app.include_router(alerts.router, dependencies=protected)
 app.include_router(settings.router, dependencies=protected)
 app.include_router(kpi_prediction.router, dependencies=protected)
+app.include_router(copilot.router, dependencies=protected)
 
 
 @app.get('/api/health')

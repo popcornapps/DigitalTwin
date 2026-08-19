@@ -227,34 +227,6 @@ export const getMockBatchKPIs = (batch: string): BatchKPIs => {
   };
 };
 
-export const getMockAiChat = (batch: string, persona: string = 'Plant Manager') => {
-  if (persona === 'Plant Operator') {
-    return [
-      { sender: 'user', text: `Why is Batch ${batch} slower than the Golden Batch?` },
-      { sender: 'ai', text: `Analyzing manufacturing process parameters for batch **${batch}**...\n\nI have identified that the agitator speed is locked at **18 RPM** compared to the reference Golden Batch target of **22 RPM**. This speed reduction is causing a temperature control heat transfer lag, introducing an estimated **45-minute delay** to the granulation phase.` },
-      { sender: 'user', text: 'How can I resolve this speed issue?' },
-      { sender: 'ai', text: `Troubleshooting guide:\n1. **Verify VFD Drive Calibration**: Check the Variable Variable Frequency Drive feedback loop on Mixer-0 units.\n2. **Check Powder Viscosity**: High viscosity could force current limiters down; review micro-feeder screw rates.\n3. **Verify SOP override limits**: You may manually adjust the speed slider up to 20 RPM under active supervisor signoff.` }
-    ];
-  }
-  
-  if (persona === 'Quality Engineer') {
-    return [
-      { sender: 'user', text: `What caused the moisture anomaly in Batch ${batch}?` },
-      { sender: 'ai', text: `Deep-diving anomaly record for **${batch}**...\n\nDuring drying stage, the temperature spiked to **78.5°C** (upper threshold: 75.0°C) while flow draft fell by **4%**. This combination caused the moisture level anomaly (2.3% vs target 2.0%). Root cause is the dry-bleed damper actuator sticking in the pneumatic line.` },
-      { sender: 'user', text: 'What are the release compliance implications for this batch?' },
-      { sender: 'ai', text: `Compliance Release Assessment:\n- **Purity & Yield**: Within specification limits.\n- **Moisture CQA**: Stale deviation flag. Requires manual laboratory dry-weight verification before digital release signoff.\n- **Risk profile**: Moderate. Recommended to run secondary blending analysis before final release.` }
-    ];
-  }
-
-  // Default: Plant Manager
-  return [
-    { sender: 'user', text: 'Summarize the active shift performance for the plant.' },
-    { sender: 'ai', text: 'Currently, the Hyderabad Plant is operating at **94.5% efficiency** with an OEE of **91.2%**, satisfying today\'s output targets. The Paracetamol 500mg line is running normally except for minor dry-bleed exhaust damper issues in Dryer-03. Scheduled batch completion times are currently on track.' },
-    { sender: 'user', text: 'Are there any major risks for the next shift?' },
-    { sender: 'ai', text: 'Based on trend extrapolation:\n1. **Material Shortages**: Low risk. All solvent buffers are at 85% capacity.\n2. **Maintenance**: Boiler-B scheduled checkup due. Clean-in-place (CIP) logs indicate 0 exceptions.\nNo critical blockers detected for the night shift transition.' }
-  ];
-};
-
 export type RecommendationStatus = 'New' | 'Pending' | 'Acknowledged' | 'Rejected' | 'Resolved';
 export type RecommendationPriority = 'Critical' | 'Medium' | 'Low';
 

@@ -150,8 +150,11 @@ export default function KpiDeviationPrediction() {
     fetchRunningBatches()
       .then((data) => {
         if (cancelled) return;
-        setRunningBatches(data);
-        const defaultId = pickDefaultBatchId(data, searchParams.get('batch'));
+        // Completed/Stopped batches belong in Batch Explorer, not this
+        // live-KPI-prediction selector.
+        const running = data.filter((b) => b.status === 'Running');
+        setRunningBatches(running);
+        const defaultId = pickDefaultBatchId(running, searchParams.get('batch'));
         if (defaultId !== searchParams.get('batch')) setSelectedRunningBatchId(defaultId);
       })
       .catch((err) => {
@@ -189,7 +192,7 @@ export default function KpiDeviationPrediction() {
       fetchRunningBatches()
         .then((data) => {
           if (cancelled) return;
-          setRunningBatches(data);
+          setRunningBatches(data.filter((b) => b.status === 'Running'));
         })
         .catch(() => {
           // A transient poll failure isn't worth a full-page error state -

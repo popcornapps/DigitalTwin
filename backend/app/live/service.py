@@ -180,7 +180,13 @@ def get_recent_readings(running_batch_id: str, lookback_minutes: int = 30) -> li
 
 
 def seed_default_batches() -> None:
-    """Creates the 4 default running batches once at backend startup - see
-    config.DEFAULT_SEED_BATCHES for which parameter/severity each one uses."""
-    for spec in config.DEFAULT_SEED_BATCHES:
-        create_running_batch(spec['plant'], spec['scenario_profile'], spec['drifting_parameter'])
+    """Creates config.DEFAULT_SEED_BATCH_COUNT (2) default running batches
+    once at backend startup - one Critical, one Warning, each with a
+    distinct, randomly chosen parameter drawn from config.
+    FAULT_CAPABLE_PARAMETERS (the same pool create_random_demo_batch draws
+    from for auto-replenishment), so a fresh restart doesn't always
+    reproduce the exact same fixed scenario."""
+    plant = config.PLANTS[0]
+    critical_parameter, warning_parameter = random.sample(config.FAULT_CAPABLE_PARAMETERS, config.DEFAULT_SEED_BATCH_COUNT)
+    create_running_batch(plant, 'Critical', critical_parameter)
+    create_running_batch(plant, 'Warning', warning_parameter)

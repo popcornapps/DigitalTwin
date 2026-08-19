@@ -11,6 +11,7 @@ import ReviewDesk from './pages/ReviewDesk';
 import KpiDeviationPrediction from './pages/KpiDeviationPrediction';
 import SettingsPage from './pages/Settings';
 import { FilterProvider, useFilter, PLANTS, PRODUCTS } from './context/FilterContext';
+import { CopilotProvider } from './context/CopilotContext';
 
 export const PERSONA_CONFIGS: Record<string, { landingPage: string; visiblePages: string[] }> = {
   'Plant Manager': {
@@ -280,7 +281,9 @@ function App() {
   return (
     <BrowserRouter>
       <FilterProvider>
-        <AppContent />
+        <CopilotProvider>
+          <AppContent />
+        </CopilotProvider>
       </FilterProvider>
     </BrowserRouter>
   );
