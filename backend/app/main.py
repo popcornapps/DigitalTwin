@@ -1,8 +1,15 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+
+# Without this, only WARNING+ ever reaches the console (uvicorn's own default
+# logging config never touches the root logger) - the AI Copilot's per-query
+# timing logs (app.copilot.llm_agent) are INFO level, so they'd silently
+# never show up without this.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles

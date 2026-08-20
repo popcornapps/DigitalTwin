@@ -15,10 +15,14 @@ export default function AiCopilot() {
   const { messages, setMessages, conversationId, setConversationId, startNewChat, scrollPositionRef } = useCopilot();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   // True only for this component instance's very first render - lets the
   // effect below tell "just mounted/remounted" (restore where the user left
   // off) apart from "a message was actually added" (snap to the latest one).
   const isFirstRenderRef = useRef(true);
+  // Tracks the previous isSending value so the focus effect below can tell
+  // "a request just finished" (true -> false) apart from every other render.
+  const wasSendingRef = useRef(false);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -37,6 +41,22 @@ export default function AiCopilot() {
     container.scrollTop = container.scrollHeight;
     scrollPositionRef.current = container.scrollTop;
   }, [messages, isSending, scrollPositionRef]);
+
+  useEffect(() => {
+    // Only right after a reply finishes (true -> false), and only if the
+    // user hasn't since focused something else on the page (the persona
+    // selector, a different tab, etc.) - re-focusing would yank them out of
+    // whatever they're doing. The input being disabled while sending already
+    // blurs it to <body> in every browser, so "nothing else has focus" is
+    // the correct signal that it's safe to bring focus back here.
+    if (wasSendingRef.current && !isSending) {
+      const active = document.activeElement;
+      if (active === document.body || active === inputRef.current) {
+        inputRef.current?.focus();
+      }
+    }
+    wasSendingRef.current = isSending;
+  }, [isSending]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     // Continuously remember where the user has scrolled to - e.g. if they
@@ -121,6 +141,7 @@ export default function AiCopilot() {
          <div className="p-4 bg-gray-50 border-t border-gray-200">
             <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-gray-300 shadow-sm focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
                <input
+                  ref={inputRef}
                   type="text"
                   className="flex-1 bg-transparent px-3 py-1.5 outline-none text-gray-800 text-sm placeholder-gray-400"
                   placeholder="Ask a manufacturing question... (e.g. Any batches in critical state right now?)"

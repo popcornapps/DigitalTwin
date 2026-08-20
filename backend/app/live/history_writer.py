@@ -55,6 +55,13 @@ GENERATION_METHOD_VERSION = 'live_completion_v2'
 # from Plant KPI - see app.services.data_service._exclude_demo_batches).
 DAILY_PERMANENT_GENERATION_VERSION = 'live_completion_v2_daily'
 
+# Matches app.services.data_service._BATCH_START_DATETIME_FORMAT exactly -
+# ported, not imported, same cross-plane reasoning as _DEMO_BATCH_GENERATION_TAG
+# there. batch_start_datetime is stored/parsed as this literal-"Z" UTC string;
+# any calendar-day comparison against it must shift by
+# config.PLANT_TIMEZONE_UTC_OFFSET_MINUTES first (see _is_first_completion_today).
+_BATCH_START_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000Z'
+
 ASSAY_FLOOR_PCT = 90.0
 ASSAY_CEILING_PCT = 101.0
 QUALITY_SCORE_NORMALIZATION_SPAN = 10.0
@@ -178,15 +185,23 @@ def _deviation_fields(batch: RunningBatch) -> tuple[str, str]:
 
 def _is_first_completion_today(app_state: AppState, plant: str) -> bool:
     """True if no batch has yet been tagged DAILY_PERMANENT_GENERATION_VERSION
-    for this plant on today's calendar date. Checked directly against
-    app_state.batches_df/batch_kpis_df (not a separate in-memory counter) so
-    this is correct even right after a server restart - batches_df is
-    reloaded from Postgres at startup and kept in sync with every persist
-    via _append_to_app_state, so it's always the authoritative record of
-    which batch (if any) already graduated today."""
-    today_str = datetime.now(timezone.utc).date().isoformat()
+    for this plant on today's PLANT-LOCAL (IST) calendar date - see
+    config.plant_local_date. Must use plant-local, not UTC: batch_start_datetime
+    is stored as UTC, and UTC midnight falls at 5:30 AM IST, so a UTC-based
+    "today" disagrees with the IST calendar day the dashboard/Plant KPI layer
+    (app.services.data_service) buckets by - a batch completing between
+    midnight and 5:30 AM IST would otherwise be checked against the wrong day
+    entirely. Checked directly against app_state.batches_df/batch_kpis_df (not
+    a separate in-memory counter) so this is correct even right after a server
+    restart - batches_df is reloaded from Postgres at startup and kept in sync
+    with every persist via _append_to_app_state, so it's always the
+    authoritative record of which batch (if any) already graduated today."""
+    today = config.plant_local_date(datetime.now(timezone.utc))
     df = app_state.batches_df
-    todays_ids = df.index[(df['plant'] == plant) & (df['batch_start_datetime'].str[:10] == today_str)]
+    plant_ids = df.index[df['plant'] == plant]
+    starts = pd.to_datetime(df.loc[plant_ids, 'batch_start_datetime'], format=_BATCH_START_DATETIME_FORMAT)
+    local_dates = (starts + pd.Timedelta(minutes=config.PLANT_TIMEZONE_UTC_OFFSET_MINUTES)).dt.date
+    todays_ids = plant_ids[(local_dates == today).values]
     if len(todays_ids) == 0:
         return True
     tags = app_state.batch_kpis_df['generation_method_version'].reindex(todays_ids)

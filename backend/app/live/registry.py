@@ -6,6 +6,7 @@ these are ephemeral simulation runs, not new training data).
 """
 from datetime import datetime, timezone
 
+from app.config import plant_local_date
 from app.live import config
 from app.live.models import RunningBatch, TelemetryReading
 from app.live.simulator import BatchSimulator
@@ -21,17 +22,19 @@ class RunningBatchRegistry:
     def create(
         self, plant: str, scenario_profile: str, drifting_parameter: str | None, enforce_daily_cap: bool = True,
     ) -> RunningBatch:
-        # Counts every status (Running + Completed + Stopped) for today, not
-        # just currently-active batches - see config.MAX_BATCHES_PER_PLANT_PER_DAY.
+        # Counts every status (Running + Completed + Stopped) for today
+        # (plant-local/IST, not raw UTC - matches the same calendar day the
+        # daily-permanent tagging and dashboard bucketing use), not just
+        # currently-active batches - see config.MAX_BATCHES_PER_PLANT_PER_DAY.
         # enforce_daily_cap=False is used by the continuous-demo auto-
         # replenish path (app.live.service.create_random_demo_batch, called
         # from scheduler.py) - this cap exists to stop a HUMAN from
         # spamming manual creation, not to throttle the system's own
         # automatic replacement of a batch that just finished.
         if enforce_daily_cap:
-            today = datetime.now(timezone.utc).date()
+            today = plant_local_date(datetime.now(timezone.utc))
             created_today = sum(
-                1 for b in self._batches.values() if b.plant == plant and b.started_at.date() == today
+                1 for b in self._batches.values() if b.plant == plant and plant_local_date(b.started_at) == today
             )
             if created_today >= config.MAX_BATCHES_PER_PLANT_PER_DAY:
                 raise ValueError(

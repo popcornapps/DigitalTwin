@@ -13,7 +13,7 @@ schemas (app.copilot.tools), the LLM agent's prompts (app.copilot.llm_agent),
 and the router all keep working unmodified, since they only ever see the
 dict shapes this module hands back.
 """
-from app.config import PARAMETER_LABELS
+from app.config import PARAMETER_LABELS, PLANT_PERIOD_GROUP_BY_VALUES
 from app.live import config as live_config
 from app.live import service as live_service
 from app.live.alert_registry import alert_registry
@@ -227,8 +227,28 @@ def get_historical_batch_kpis(batch_id: str) -> dict | None:
     return None if kpis is None else kpis.model_dump()
 
 
-def get_plant_kpi_rollup(plant: str) -> dict | None:
-    """All-time plant-level KPI rollup (OEE/Quality/Process Stability/Energy) -
-    the plant-analytics half of "history of batch data"."""
-    rollup = data_service.get_plant_kpi_rollup(app_state, _resolve_plant(plant))
-    return None if rollup is None else rollup.model_dump()
+def get_plant_kpi_rollup(plant: str, group_by: str | None = None, period: str | None = None) -> dict | None:
+    """Plant-level KPI numbers for a plant.
+    - group_by=None (default): the existing all-time rollup (OEE/Quality/Process
+      Stability/Energy) - the plant-analytics half of "history of batch data".
+    - group_by='shift'/'day'/'month', period=None: the CURRENT shift/day/month -
+      calls data_service.get_plant_current_period_kpi, the exact function backing
+      the dashboard's Current Shift/Today/This Month cards, so numbers always agree.
+    - group_by='day'/'month', period='YYYY-MM-DD'/'YYYY-MM': a specific past
+      day/month, looked up from data_service.get_plant_period_kpis' full period
+      list by period_label (group_by='shift' has no historical lookup - always
+      current)."""
+    plant = _resolve_plant(plant)
+    if group_by is None:
+        rollup = data_service.get_plant_kpi_rollup(app_state, plant)
+        return None if rollup is None else rollup.model_dump()
+
+    if group_by not in PLANT_PERIOD_GROUP_BY_VALUES:
+        raise ValueError(f"group_by must be one of {PLANT_PERIOD_GROUP_BY_VALUES}, got '{group_by}'")
+
+    if period is None or group_by == 'shift':
+        result = data_service.get_plant_current_period_kpi(app_state, plant, group_by)
+    else:
+        full = data_service.get_plant_period_kpis(app_state, plant, group_by)
+        result = None if full is None else next((p for p in full.periods if p.period_label == period), None)
+    return None if result is None else result.model_dump()

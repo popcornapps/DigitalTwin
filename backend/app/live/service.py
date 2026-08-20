@@ -7,6 +7,7 @@ import logging
 import random
 from datetime import datetime, timezone
 
+from app.config import plant_local_date
 from app.live import config, history_writer
 from app.live.alert_registry import alert_registry
 from app.live.models import RunningBatch, TelemetryReading
@@ -119,12 +120,17 @@ def prune_old_demo_batches(app_state: AppState) -> list[str]:
     history). Two independent triggers:
       1. Count-based: beyond the latest DEMO_BATCH_RETENTION_COUNT for its plant.
       2. Day-boundary: its terminal_at (when it left Running) falls on a
-         calendar date before today - the moment a new day starts, every
-         temporary batch left over from the previous day is removed, even if
-         it would otherwise still be within the count-based window. Applies
-         equally to manually-Stopped and naturally-Completed batches, and to
-         both manually- and automatically-created ones - nothing here
-         distinguishes by how a batch was created, only by how it ended.
+         PLANT-LOCAL (IST) calendar date before today - the moment a new
+         plant-local day starts, every temporary batch left over from the
+         previous day is removed, even if it would otherwise still be within
+         the count-based window. Applies equally to manually-Stopped and
+         naturally-Completed batches, and to both manually- and
+         automatically-created ones - nothing here distinguishes by how a
+         batch was created, only by how it ended. Uses plant_local_date, not
+         a raw UTC date, so this boundary agrees with the same IST day the
+         daily-permanent tagging (history_writer._is_first_completion_today)
+         and the dashboard's "Completed today" bucketing already use - a UTC
+         boundary here would drift by up to 5.5 hours against those.
     Batches with is_daily_permanent=True (see history_writer.
     persist_completed_batch) are excluded entirely from BOTH triggers -
     they're permanent historical data now, counted in Plant KPI/Batch
@@ -133,7 +139,7 @@ def prune_old_demo_batches(app_state: AppState) -> list[str]:
     just an in-memory scan, and almost always a no-op once the pool is
     already at steady state. Returns the running_batch_ids actually purged,
     for logging/testing."""
-    today = datetime.now(timezone.utc).date()
+    today = plant_local_date(datetime.now(timezone.utc))
     finished = [
         b for b in running_batch_registry.list_batches()
         if b.status in ('Completed', 'Stopped') and not b.is_daily_permanent
@@ -146,7 +152,7 @@ def prune_old_demo_batches(app_state: AppState) -> list[str]:
     for plant_batches in by_plant.values():
         plant_batches.sort(key=lambda b: b.terminal_at or b.started_at, reverse=True)
         for idx, batch in enumerate(plant_batches):
-            terminal_date = (batch.terminal_at or batch.started_at).date()
+            terminal_date = plant_local_date(batch.terminal_at or batch.started_at)
             beyond_count = idx >= config.DEMO_BATCH_RETENTION_COUNT
             from_a_previous_day = terminal_date < today
             if (beyond_count or from_a_previous_day) and delete_running_batch(batch.running_batch_id, app_state) == 'deleted':

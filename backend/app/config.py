@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, date
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -103,3 +104,13 @@ PLANT_PERIOD_GROUP_BY_VALUES = ('shift', 'day', 'month')
 # batch_start_datetime itself stays stored as real UTC (a timestamptz
 # column), only the bucketing conversion happens at read time.
 PLANT_TIMEZONE_UTC_OFFSET_MINUTES = 330
+
+
+def plant_local_date(moment: datetime) -> date:
+    """Shifts a UTC instant to the plant's local (IST) wall clock and
+    returns its calendar date - the single source of truth for "what day is
+    it at the plant" so every UTC-vs-IST day-boundary decision (daily-
+    permanent-batch tagging, demo-batch retention, the manual daily batch
+    cap) agrees with the plant-local bucketing get_plant_period_kpis already
+    uses, instead of drifting against it by PLANT_TIMEZONE_UTC_OFFSET_MINUTES."""
+    return (moment + timedelta(minutes=PLANT_TIMEZONE_UTC_OFFSET_MINUTES)).date()

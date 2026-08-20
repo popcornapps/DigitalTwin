@@ -17,7 +17,7 @@ export interface ChatMessage {
 
 export const WELCOME_MESSAGE: ChatMessage = {
   sender: 'ai',
-  text: "Ask me anything about the batches currently running - status, KPI predictions, alerts, or how they compare to history. I'm not scoped to one batch, so feel free to name one, ask about all of them, or compare a few.",
+  text: 'Ask me about running batches — status, KPI predictions, process parameters, alerts, recommendations, or comparisons with historical batches. You can ask about one batch, multiple batches, or all running batches.',
 };
 
 const MESSAGES_STORAGE_KEY = 'copilot.messages';

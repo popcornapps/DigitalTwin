@@ -17,6 +17,8 @@ like a normal chatbot: send a message, get a real answer, every time.
 import json
 import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from app.copilot import tools
 
@@ -212,13 +214,33 @@ def _create_completion(client, messages: list[dict]):
         raise
 
 
+def _execute_tool_call(tc) -> dict:
+    fn = tools.TOOL_DISPATCH.get(tc.function.name)
+    started = time.perf_counter()
+    try:
+        args = json.loads(tc.function.arguments or '{}')
+        # Never put raw exception text into the model's context - it's
+        # internal (stack traces, SQL errors, etc.), and the model
+        # would otherwise have a natural tendency to relay it verbatim
+        # to the user. A plain "unavailable" signal is enough for the
+        # model to say so and move on with whatever else it has.
+        return fn(**args) if fn else {'unavailable': True}
+    except Exception:
+        logger.exception('AI Copilot tool call failed: %s', tc.function.name)
+        return {'unavailable': True}
+    finally:
+        logger.info('AI Copilot tool %s took %.0fms', tc.function.name, (time.perf_counter() - started) * 1000)
+
+
 def _run_tool_loop(messages: list[dict]) -> str | None:
     client = _get_client()
     if client is None:
         return None
 
-    for _ in range(MAX_TOOL_ROUNDS):
+    for round_num in range(1, MAX_TOOL_ROUNDS + 1):
+        llm_started = time.perf_counter()
         response = _create_completion(client, messages)
+        logger.info('AI Copilot round %d LLM call took %.0fms', round_num, (time.perf_counter() - llm_started) * 1000)
         message = response.choices[0].message
         if not message.tool_calls:
             return message.content
@@ -231,19 +253,21 @@ def _run_tool_loop(messages: list[dict]) -> str | None:
                 for tc in message.tool_calls
             ],
         })
-        for tc in message.tool_calls:
-            fn = tools.TOOL_DISPATCH.get(tc.function.name)
-            try:
-                args = json.loads(tc.function.arguments or '{}')
-                # Never put raw exception text into the model's context - it's
-                # internal (stack traces, SQL errors, etc.), and the model
-                # would otherwise have a natural tendency to relay it verbatim
-                # to the user. A plain "unavailable" signal is enough for the
-                # model to say so and move on with whatever else it has.
-                result = fn(**args) if fn else {'unavailable': True}
-            except Exception:
-                logger.exception('AI Copilot tool call failed: %s', tc.function.name)
-                result = {'unavailable': True}
+        tools_started = time.perf_counter()
+        if len(message.tool_calls) == 1:
+            results = [_execute_tool_call(message.tool_calls[0])]
+        else:
+            # Independent tool calls the model already decided to make in
+            # this same turn - executing them concurrently only changes how
+            # long this round takes, never what's called or what comes back,
+            # so it can't affect answer content/format/tool-selection.
+            with ThreadPoolExecutor(max_workers=len(message.tool_calls)) as pool:
+                results = list(pool.map(_execute_tool_call, message.tool_calls))
+        logger.info(
+            'AI Copilot round %d: %d tool call(s) took %.0fms total',
+            round_num, len(message.tool_calls), (time.perf_counter() - tools_started) * 1000,
+        )
+        for tc, result in zip(message.tool_calls, results):
             messages.append({'role': 'tool', 'tool_call_id': tc.id, 'content': json.dumps(result, default=str)})
 
     return "I wasn't able to finish looking that up - try asking about one specific batch, or rephrase the question."
@@ -251,9 +275,12 @@ def _run_tool_loop(messages: list[dict]) -> str | None:
 
 def generate_reply(persona: str, history: list[dict], message: str, running_batch_id: str | None) -> str:
     messages = [{'role': 'system', 'content': _system_prompt(persona, running_batch_id)}, *history, {'role': 'user', 'content': message}]
+    started = time.perf_counter()
     try:
         reply = _run_tool_loop(messages)
         return reply or UNAVAILABLE_MESSAGE
     except Exception:
         logger.exception('Azure OpenAI call failed for the AI Copilot.')
         return UNAVAILABLE_MESSAGE
+    finally:
+        logger.info('AI Copilot query %r took %.0fms total', message[:60], (time.perf_counter() - started) * 1000)

@@ -129,10 +129,33 @@ TOOL_SCHEMAS = [
         'type': 'function',
         'function': {
             'name': 'get_plant_kpi_rollup',
-            'description': 'Get the all-time plant-level KPI rollup (average OEE/Quality/Process Stability, total energy) for a plant.',
+            'description': (
+                'Get plant-level KPI numbers for a plant, from completed historical batches only. Omit '
+                '"group_by" for the ALL-TIME rollup (OEE/Quality/Process Stability average + total energy). '
+                'Pass group_by=\'shift\'|\'day\'|\'month\' to get the SAME numbers as the dashboard\'s Current '
+                'Shift / Today / This Month cards - omit "period" for the current one. Pass a specific '
+                '"period" ("YYYY-MM-DD" for day, "YYYY-MM" for month) to look up a past day/month instead '
+                '(shift has no historical lookup - always current). "batch_count" is always how many completed '
+                'historical batches (within whatever scope was requested) were counted - never running '
+                'batches; use get_fleet_overview for currently running batches.'
+            ),
             'parameters': {
                 'type': 'object',
-                'properties': {'plant': {'type': 'string'}},
+                'properties': {
+                    'plant': {'type': 'string'},
+                    'group_by': {
+                        'type': 'string',
+                        'enum': ['shift', 'day', 'month'],
+                        'description': 'Omit for the all-time rollup. Otherwise scopes to the current (or a specific) shift/day/month.',
+                    },
+                    'period': {
+                        'type': 'string',
+                        'description': (
+                            'Optional specific past period instead of the current one: "YYYY-MM-DD" when '
+                            'group_by="day", or "YYYY-MM" when group_by="month". Ignored/unsupported for group_by="shift".'
+                        ),
+                    },
+                },
                 'required': ['plant'],
             },
         },
