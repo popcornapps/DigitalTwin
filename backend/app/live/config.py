@@ -15,7 +15,7 @@ scripts/generate-dataset/config.ts - kept in sync by hand since that file is
 the historical generator's own source of truth and isn't imported here.
 """
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 
 from app.db import get_connection
 
@@ -206,6 +206,18 @@ AUTO_REPLENISH_BATCHES = True
 # equally to naturally-Completed and manually-Stopped batches (sorted by
 # RunningBatch.terminal_at), not just one or the other.
 DEMO_BATCH_RETENTION_COUNT = 10
+
+# Once a calendar day (plant-local, by batch_start_datetime) is no longer
+# today, app.live.history_writer.enforce_past_day_retention deletes every
+# batch for that plant/day except the one already tagged
+# DAILY_PERMANENT_GENERATION_VERSION (see history_writer.py) - "1 permanent
+# batch per plant per past day," on top of DEMO_BATCH_RETENTION_COUNT above
+# governing the still-accumulating current day. A fixed constant, not
+# data-derived, so it can be set to the day this policy actually went live
+# WITHOUT retroactively reducing every already-existing past day in Postgres
+# down to 1 the moment this code first runs - only days on or after this
+# date are ever eligible; anything from before it is left untouched forever.
+RETENTION_POLICY_CUTOVER_DATE = date(2026, 8, 20)
 
 # Matches history_writer.GENERATION_METHOD_VERSION exactly - the tag written
 # to batch_kpis.generation_method_version for every live-completed batch.

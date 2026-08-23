@@ -432,14 +432,11 @@ def _append_to_app_state(app_state: AppState, batches_row: dict, kpis_row: dict)
     app_state.batch_kpis_df = pd.concat([app_state.batch_kpis_df, new_kpis_row])
 
 
-def delete_persisted_batch(batch: RunningBatch, app_state: AppState) -> None:
-    """No-op if this batch was never persisted (Stopped batches, or a failed
-    persist attempt) - batch.history_batch_id is only set on a successful
-    persist. batch_kpis cascades automatically (ON DELETE CASCADE on its FK
-    to batches), so only the batches row needs an explicit DELETE."""
-    if batch.history_batch_id is None:
-        return
-    history_batch_id = batch.history_batch_id
+def _delete_batch_row(history_batch_id: str, app_state: AppState) -> None:
+    """Shared by delete_persisted_batch (one specific live batch) and
+    enforce_past_day_retention (a whole day's worth at once) - batch_kpis
+    cascades automatically (ON DELETE CASCADE on its FK to batches), so only
+    the batches row needs an explicit DELETE."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -453,3 +450,66 @@ def delete_persisted_batch(batch: RunningBatch, app_state: AppState) -> None:
 
     app_state.batches_df = app_state.batches_df.drop(index=history_batch_id, errors='ignore')
     app_state.batch_kpis_df = app_state.batch_kpis_df.drop(index=history_batch_id, errors='ignore')
+
+
+def delete_persisted_batch(batch: RunningBatch, app_state: AppState) -> None:
+    """No-op if this batch was never persisted (Stopped batches, or a failed
+    persist attempt) - batch.history_batch_id is only set on a successful
+    persist."""
+    if batch.history_batch_id is None:
+        return
+    _delete_batch_row(batch.history_batch_id, app_state)
+
+
+def enforce_past_day_retention(app_state: AppState) -> list[str]:
+    """For every (plant, calendar day) that is no longer today - grouped by
+    batch_start_datetime's PLANT-LOCAL date, same convention
+    _is_first_completion_today already uses - deletes every batch except the
+    one already tagged DAILY_PERMANENT_GENERATION_VERSION for that day (see
+    persist_completed_batch). A day with no permanent batch at all is left
+    completely untouched: this function only ever enforces "keep the
+    existing permanent one," it never selects or invents a replacement -
+    that selection stays exactly _is_first_completion_today's job, made once,
+    at persist time.
+
+    Only applies to days on or after live_config.RETENTION_POLICY_CUTOVER_DATE
+    - see that constant's own comment for why this is a fixed date rather
+    than derived from the data: so turning this on does not retroactively
+    reduce every already-existing past day in Postgres the moment this code
+    first runs. PAR-GOLDEN (is_golden_batch=True) is never a candidate here
+    regardless of day - it isn't a live-completed batch at all.
+
+    Cheap in-memory scan over app_state.batches_df/batch_kpis_df, same
+    "runs every tick, almost always a no-op at steady state" reasoning
+    app.live.service.prune_old_demo_batches already documents - actual
+    DELETEs only fire on the (rare) day a plant's previous day still has
+    more than its one permanent batch left over. Returns the deleted
+    history_batch_ids, for logging/testing."""
+    today = config.plant_local_date(datetime.now(timezone.utc))
+    df = app_state.batches_df
+    non_golden = df.index[df['is_golden_batch'] != True]  # noqa: E712 - real bool column, not `is not True`
+
+    starts = pd.to_datetime(df.loc[non_golden, 'batch_start_datetime'], format=_BATCH_START_DATETIME_FORMAT)
+    local_dates = (starts + pd.Timedelta(minutes=config.PLANT_TIMEZONE_UTC_OFFSET_MINUTES)).dt.date
+    eligible = (local_dates < today) & (local_dates >= live_config.RETENTION_POLICY_CUTOVER_DATE)
+    eligible_ids = non_golden[eligible.values]
+    if len(eligible_ids) == 0:
+        return []
+
+    groups: dict[tuple[str, object], list[str]] = {}
+    plants = df.loc[eligible_ids, 'plant']
+    eligible_dates = local_dates[eligible.values]
+    for batch_id, plant, local_date in zip(eligible_ids, plants, eligible_dates):
+        groups.setdefault((plant, local_date), []).append(batch_id)
+
+    tags = app_state.batch_kpis_df['generation_method_version']
+    deleted: list[str] = []
+    for batch_ids in groups.values():
+        permanent_ids = {bid for bid in batch_ids if tags.get(bid) == DAILY_PERMANENT_GENERATION_VERSION}
+        if not permanent_ids:
+            continue  # no permanent batch recorded for this day - leave the whole day untouched
+        for batch_id in batch_ids:
+            if batch_id not in permanent_ids:
+                _delete_batch_row(batch_id, app_state)
+                deleted.append(batch_id)
+    return deleted

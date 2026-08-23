@@ -11,9 +11,11 @@ app.services, the trained model, etc.) - it only knows about the plain
 context dict handed to it, keeping it as decoupled as alert_registry.py
 already is.
 """
-import json
 import logging
 import os
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import AzureChatOpenAI
 
 from app.live import ai_mode
 
@@ -48,7 +50,11 @@ _client_init_attempted = False
 
 def _get_client():
     """Lazy singleton - constructed on first real use, not at import time, so
-    a missing/broken Azure config doesn't crash the whole backend at startup."""
+    a missing/broken Azure config doesn't crash the whole backend at startup.
+    Returns a LangChain chat model already bound to this module's strict JSON
+    schema via with_structured_output - .invoke() on it returns a plain
+    parsed dict (the schema isn't a Pydantic class), same shape json.loads
+    used to produce before this module used LangChain."""
     global _client, _client_init_attempted
     if _client_init_attempted:
         return _client
@@ -60,15 +66,18 @@ def _get_client():
         )
         return None
     try:
-        # langfuse's drop-in wrapper - identical AzureOpenAI client, but every
-        # call gets auto-traced (prompt/response/latency/cost) to Langfuse
-        # when LANGFUSE_* env vars are set; a no-op passthrough otherwise.
-        from langfuse.openai import AzureOpenAI
-        _client = AzureOpenAI(
+        llm = AzureChatOpenAI(
             azure_endpoint=_AZURE_ENDPOINT,
             api_key=_AZURE_API_KEY,
             api_version=_AZURE_API_VERSION,
+            azure_deployment=_AZURE_DEPLOYMENT,
         )
+        # with_structured_output requires a top-level 'title' on a raw JSON
+        # schema (used as the underlying function name) - _RESPONSE_SCHEMA
+        # only carries that name nested under json_schema.name today, so it's
+        # added here rather than duplicating/restructuring the schema itself.
+        schema = {**_RESPONSE_SCHEMA['json_schema']['schema'], 'title': _RESPONSE_SCHEMA['json_schema']['name']}
+        _client = llm.with_structured_output(schema, method='json_schema', strict=True)
     except Exception:
         logger.exception('Failed to construct Azure OpenAI client - falling back to deterministic reasoning.')
         _client = None
@@ -304,21 +313,19 @@ def generate_alert_reasoning(context: dict) -> dict:
         # batch id is also set as the trace's name/metadata - that's what's
         # actually human-readable in the dashboard's Traces list.
         from langfuse import get_client
+        from langfuse.langchain import CallbackHandler
         batch_id = context['running_batch_id']
         trace_id = get_client().create_trace_id(seed=batch_id)
+        handler = CallbackHandler(trace_context={'trace_id': trace_id})
 
-        response = client.chat.completions.create(
-            model=_AZURE_DEPLOYMENT,
-            name=f'deviation-reasoning-{batch_id}',
-            metadata={'running_batch_id': batch_id, 'parameter': context.get('parameter_label')},
-            messages=[
-                {'role': 'system', 'content': _SYSTEM_PROMPT},
-                {'role': 'user', 'content': _build_user_prompt(context)},
-            ],
-            response_format=_RESPONSE_SCHEMA,
-            trace_id=trace_id,
+        parsed = client.invoke(
+            [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=_build_user_prompt(context))],
+            config={
+                'callbacks': [handler],
+                'run_name': f'deviation-reasoning-{batch_id}',
+                'metadata': {'running_batch_id': batch_id, 'parameter': context.get('parameter_label')},
+            },
         )
-        parsed = json.loads(response.choices[0].message.content)
         if parsed.get('urgency') not in URGENCY_LEVELS:
             raise ValueError(f"model returned an invalid urgency value: {parsed.get('urgency')!r}")
         if any(field not in parsed for field in _OUTPUT_FIELDS):

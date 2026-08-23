@@ -1,4 +1,4 @@
-import { sendCopilotMessage, ApiError } from '../lib/api';
+import { streamCopilotMessage, ApiError } from '../lib/api';
 import { Send, Bot, User, Cpu, Loader2, MessageSquarePlus } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useFilter } from '../context/FilterContext';
@@ -8,6 +8,12 @@ import { renderChatText } from '../lib/renderChatText';
 export default function AiCopilot() {
   const [inputVal, setInputVal] = useState('');
   const [isSending, setIsSending] = useState(false);
+  // Distinct from isSending: true only once the AI's message bubble has
+  // actually started growing with streamed text - lets the "generating..."
+  // placeholder disappear the moment real content starts arriving, instead
+  // of sitting there (redundantly, next to the now-visible growing answer)
+  // for the whole rest of the stream.
+  const [streamingStarted, setStreamingStarted] = useState(false);
   const { selectedPersona } = useFilter();
   // Lifted above the router (see CopilotContext) so switching tabs and
   // coming back doesn't lose the conversation - it only resets when the
@@ -72,10 +78,32 @@ export default function AiCopilot() {
     setMessages(prev => [...prev, { sender: 'user', text }]);
     setInputVal('');
     setIsSending(true);
+    setStreamingStarted(false);
+    let hasStartedMessage = false;
     try {
-      const response = await sendCopilotMessage(text, conversationId, selectedPersona);
-      setConversationId(response.conversation_id);
-      setMessages(prev => [...prev, { sender: 'ai', text: response.reply }]);
+      await streamCopilotMessage(text, conversationId, selectedPersona, {
+        onConversationId: setConversationId,
+        onChunk: (piece) => {
+          if (!hasStartedMessage) {
+            hasStartedMessage = true;
+            setStreamingStarted(true);
+            setMessages(prev => [...prev, { sender: 'ai', text: piece }]);
+          } else {
+            setMessages(prev => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              next[next.length - 1] = { ...last, text: last.text + piece };
+              return next;
+            });
+          }
+        },
+      });
+      if (!hasStartedMessage) {
+        // The stream completed without ever yielding a piece - shouldn't
+        // normally happen (the backend always yields at least a fallback
+        // message), but never leave the user staring at nothing.
+        setMessages(prev => [...prev, { sender: 'ai', text: 'The AI Copilot is temporarily unavailable. Please try again shortly.' }]);
+      }
     } catch (err) {
       const detail = err instanceof ApiError ? err.message : 'Something went wrong reaching the AI Copilot.';
       setMessages(prev => [...prev, { sender: 'ai', text: detail }]);
@@ -127,7 +155,7 @@ export default function AiCopilot() {
                   )}
                </div>
             ))}
-            {isSending && (
+            {isSending && !streamingStarted && (
                <div className="flex gap-4 justify-start">
                   <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
                      <Bot size={18} />

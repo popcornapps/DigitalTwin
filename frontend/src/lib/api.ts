@@ -497,18 +497,54 @@ export const fetchKpiPrediction = (runningBatchId: string): Promise<KpiPredictio
 // not scoped to any one batch: the model resolves which running batch(es) a
 // question is about itself via its own list_running_batches tool.
 
-export interface CopilotChatResponse {
-  reply: string;
-  conversation_id: string;
+export interface CopilotStreamHandlers {
+  onConversationId: (conversationId: string) => void;
+  onChunk: (text: string) => void;
 }
 
-export const sendCopilotMessage = (
+// Streams the reply as the backend generates it (backend/app/routers/
+// copilot.py returns a StreamingResponse, not a single JSON body) - the
+// conversation id arrives immediately as a response header (known before
+// any of the reply text is generated), then onChunk fires once per piece of
+// text as it's decoded off the response body's reader.
+export async function streamCopilotMessage(
   message: string,
   conversationId: string | null,
   persona: string,
-): Promise<CopilotChatResponse> =>
-  postJson('/copilot/chat', {
-    message,
-    persona,
-    ...(conversationId ? { conversation_id: conversationId } : {}),
-  });
+  handlers: CopilotStreamHandlers,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/copilot/chat`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        persona,
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+      }),
+    });
+  } catch {
+    throw new ApiError('Could not reach the prediction API. Is the backend running? (.venv/bin/uvicorn app.main:app --port 8000, from backend/)');
+  }
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new ApiError(body?.detail || `Request failed (${response.status})`);
+  }
+
+  const newConversationId = response.headers.get('X-Conversation-Id');
+  if (newConversationId) handlers.onConversationId(newConversationId);
+
+  const reader = response.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value, { stream: true });
+    if (text) handlers.onChunk(text);
+  }
+}

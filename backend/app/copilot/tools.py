@@ -4,6 +4,11 @@ execute a call the model requests. This file is the LLM-facing contract;
 app.copilot.data_access is the only thing it's allowed to call into - no
 tool function here ever touches app.live/app.services/app.state directly.
 """
+import inspect
+from typing import Literal
+
+from pydantic import BaseModel, Field, create_model
+
 from app.copilot import data_access
 
 TOOL_SCHEMAS = [
@@ -172,3 +177,54 @@ TOOL_DISPATCH = {
     'get_historical_batch_kpis': data_access.get_historical_batch_kpis,
     'get_plant_kpi_rollup': data_access.get_plant_kpi_rollup,
 }
+
+_JSON_TYPE_TO_PY = {'string': str, 'integer': int, 'number': float, 'boolean': bool}
+
+
+def _args_model_for(name: str, params: dict, func) -> type[BaseModel]:
+    """Builds a LangChain tool's pydantic argument schema mechanically from
+    this SAME tool's TOOL_SCHEMAS entry, field for field - so what the
+    LangChain agent sees is always derived from the one schema already used
+    for the raw tool-calling contract above, never a hand-duplicated copy
+    that could drift out of sync with it (including the current, deliberately
+    unchanged inconsistency of some properties having a 'description' and
+    others not). Optional fields default to the dispatched function's OWN
+    parameter default (read via inspect) rather than a blanket None, so a
+    tool call that omits an optional argument behaves exactly like calling
+    the underlying function directly (e.g. get_recent_telemetry's `minutes`
+    still defaults to RECENT_TELEMETRY_DEFAULT_MINUTES, not None)."""
+    properties = params.get('properties', {})
+    required = set(params.get('required', []))
+    sig_params = inspect.signature(func).parameters
+    fields = {}
+    for prop_name, prop in properties.items():
+        py_type = Literal[tuple(prop['enum'])] if 'enum' in prop else _JSON_TYPE_TO_PY[prop['type']]
+        description = prop.get('description')
+        if prop_name in required:
+            fields[prop_name] = (py_type, Field(description=description))
+        else:
+            default = sig_params[prop_name].default
+            fields[prop_name] = (py_type | None, Field(default=default, description=description))
+    return create_model(f'{name}_Args', **fields)
+
+
+def _build_langchain_tools() -> list:
+    from langchain_core.tools import StructuredTool
+
+    tools = []
+    for schema in TOOL_SCHEMAS:
+        fn_schema = schema['function']
+        func = TOOL_DISPATCH[fn_schema['name']]
+        tools.append(StructuredTool.from_function(
+            func=func,
+            name=fn_schema['name'],
+            description=fn_schema['description'],
+            args_schema=_args_model_for(fn_schema['name'], fn_schema['parameters'], func),
+        ))
+    return tools
+
+
+# The Copilot's LangChain agent tool list - mechanically derived from
+# TOOL_SCHEMAS/TOOL_DISPATCH above (see _build_langchain_tools), not a
+# separate hand-written definition.
+LANGCHAIN_TOOLS = _build_langchain_tools()

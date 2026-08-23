@@ -111,6 +111,18 @@ def delete_running_batch(running_batch_id: str, app_state: AppState) -> str:
     return 'deleted'
 
 
+def enforce_past_day_batch_retention(app_state: AppState) -> list[str]:
+    """Thin wrapper, same convention as prune_old_demo_batches below - the
+    actual Postgres-level logic lives in history_writer.py (which already
+    owns every other persisted-batch write/delete). Unlike
+    prune_old_demo_batches (in-memory registry only, so it stops protecting
+    a day the moment the process restarts), this reads/writes
+    app_state.batches_df/batch_kpis_df directly, so it keeps working
+    correctly across restarts - see history_writer.enforce_past_day_retention
+    for why that distinction matters."""
+    return history_writer.enforce_past_day_retention(app_state)
+
+
 def prune_old_demo_batches(app_state: AppState) -> list[str]:
     """Keeps only the latest config.DEMO_BATCH_RETENTION_COUNT finished
     (Completed OR Stopped) TEMPORARY batches PER PLANT fully available, AND
