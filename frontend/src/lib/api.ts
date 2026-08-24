@@ -502,15 +502,30 @@ export interface CopilotStreamHandlers {
   onChunk: (text: string) => void;
 }
 
+export interface CopilotHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 // Streams the reply as the backend generates it (backend/app/routers/
 // copilot.py returns a StreamingResponse, not a single JSON body) - the
 // conversation id arrives immediately as a response header (known before
 // any of the reply text is generated), then onChunk fires once per piece of
 // text as it's decoded off the response body's reader.
+//
+// `history` is whatever's still visible in the chat UI (see AiCopilot.tsx) -
+// sent explicitly on every request because it outlives the backend's own
+// conversation_store (which forgets after an hour of inactivity): as long as
+// the user can still see prior messages on screen, the AI should too. Only
+// the last 5 EXCHANGES (10 raw entries - a question + its answer counts as
+// one exchange) are ever actually used (backend/app/copilot/service.py's
+// HISTORY_EXCHANGE_LIMIT enforces this regardless of how many are sent) -
+// trimming here as well just keeps the request itself small.
 export async function streamCopilotMessage(
   message: string,
   conversationId: string | null,
   persona: string,
+  history: CopilotHistoryTurn[],
   handlers: CopilotStreamHandlers,
 ): Promise<void> {
   let response: Response;
@@ -522,6 +537,7 @@ export async function streamCopilotMessage(
       body: JSON.stringify({
         message,
         persona,
+        history: history.slice(-10),
         ...(conversationId ? { conversation_id: conversationId } : {}),
       }),
     });

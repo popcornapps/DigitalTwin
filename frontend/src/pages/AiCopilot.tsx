@@ -75,13 +75,23 @@ export default function AiCopilot() {
     const text = inputVal.trim();
     if (!text || isSending) return;
 
+    // Captured from state BEFORE this new message is appended below - the
+    // history of the conversation SO FAR, not including what's being sent
+    // right now. Sent explicitly on every request since it's what survives
+    // beyond the backend's own 1-hour-inactivity memory (see lib/api.ts) -
+    // only the last 5 are ever actually used either way.
+    const historyForRequest = messages.map(m => ({
+      role: m.sender === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.text,
+    }));
+
     setMessages(prev => [...prev, { sender: 'user', text }]);
     setInputVal('');
     setIsSending(true);
     setStreamingStarted(false);
     let hasStartedMessage = false;
     try {
-      await streamCopilotMessage(text, conversationId, selectedPersona, {
+      await streamCopilotMessage(text, conversationId, selectedPersona, historyForRequest, {
         onConversationId: setConversationId,
         onChunk: (piece) => {
           if (!hasStartedMessage) {

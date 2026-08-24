@@ -20,12 +20,36 @@ def resolve_conversation_id(conversation_id: str | None) -> str:
     return conversation_id or conversation_store.new_conversation_id()
 
 
-async def stream_chat_message(conv_id: str, persona: str, running_batch_id: str | None, message: str):
-    """Streaming counterpart to handle_chat_message - same lookup of prior
-    history and same persistence of the finished turn, just yields the
-    reply in pieces as llm_agent.stream_reply generates them instead of
-    returning it once complete."""
-    history = conversation_store.get_history(conv_id)
+# How many user+AI EXCHANGES (a question and its answer, 2 raw entries each)
+# from the client-supplied history (see stream_chat_message) actually get
+# sent to the LLM - a plain truncation, no summarization and no extra LLM
+# call. Deliberately small and fixed rather than derived from
+# conversation_store's own TTL: the client's copy of the conversation
+# (what's still visible in the chat UI) doesn't expire the way
+# conversation_store's server-side copy does, so this is what makes a
+# returning-after-a-long-gap user still get real context instead of a
+# silently-forgotten chat - see app.schemas.copilot.CopilotChatRequest.history.
+HISTORY_EXCHANGE_LIMIT = 5
+HISTORY_TURN_LIMIT = HISTORY_EXCHANGE_LIMIT * 2
+
+
+async def stream_chat_message(
+    conv_id: str, persona: str, running_batch_id: str | None, message: str, client_history: list[dict],
+):
+    """Streaming counterpart to handle_chat_message - same persistence of
+    the finished turn, just yields the reply in pieces as
+    llm_agent.stream_reply generates them instead of returning it once
+    complete.
+
+    Unlike handle_chat_message (which reads conversation_store's own
+    server-side history - silently empty once CONVERSATION_TTL_SECONDS of
+    inactivity has passed), this uses the CLIENT-supplied history instead -
+    truncated to the latest HISTORY_EXCHANGE_LIMIT exchanges, regardless of how many
+    the client sent or how long it's been since the last message. Everything
+    else (the agent, its tools, the system prompt) is unaffected by this -
+    llm_agent.stream_reply already accepts a plain history list in this
+    exact {'role', 'content'} shape."""
+    history = client_history[-HISTORY_TURN_LIMIT:]
     full_reply_parts = []
     async for piece in llm_agent.stream_reply(persona, history, message, running_batch_id):
         full_reply_parts.append(piece)

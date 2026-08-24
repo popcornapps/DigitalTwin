@@ -14,8 +14,9 @@ def chat(req: CopilotChatRequest):
     # the client needs it right away to keep tagging this conversation on
     # every later message, not just once the full reply has finished.
     conv_id = service.resolve_conversation_id(req.conversation_id)
+    client_history = [turn.model_dump() for turn in req.history]
     return StreamingResponse(
-        service.stream_chat_message(conv_id, req.persona, req.running_batch_id, req.message),
+        service.stream_chat_message(conv_id, req.persona, req.running_batch_id, req.message, client_history),
         media_type='text/plain',
         headers={'X-Conversation-Id': conv_id},
     )
