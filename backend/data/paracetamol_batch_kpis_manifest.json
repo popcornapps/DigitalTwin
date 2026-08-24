@@ -1,10 +1,11 @@
 {
-  "generation_method_version": "v2",
+  "generation_method_version": "v3",
   "row_grain": "one row per batch - completed-batch summary, not a time series",
   "source_files": [
     "data/paracetamol_batches.csv",
     "data/paracetamol_batch_timeseries.csv",
-    "data/paracetamol_parameter_config.csv"
+    "Postgres: batch_support_timeseries (secondary parameters)",
+    "Postgres: parameters (limits for all 12 parameters)"
   ],
   "columns": {
     "batch_id": {
@@ -73,12 +74,12 @@
     "yield_pct": {
       "provenance": "derived",
       "has_temporal_signal": false,
-      "note": "100 * actual_output_kg / theoretical_output_kg - no longer a severity-tiered random draw"
+      "note": "100 * actual_output_kg / theoretical_output_kg. v3: yield_loss_frac now also includes Agitator RPM/Filter DP/Shaker Vibration deviation terms, matching the 8-parameter definition generate_synthetic_kpi_data.py trains the ML model on and kpi_prediction_agent.py explains live predictions with - not just the 3-parameter stability term used through v2"
     },
     "quality_score_pct": {
       "provenance": "derived",
       "has_temporal_signal": false,
-      "note": "distance of assay_pct from target, normalized by 2x the Assay spec half-width - no longer a severity-tiered random draw, but still a proxy pending real CQA lab data (Quality Workbench Tier 3)"
+      "note": "distance of assay_pct from target, normalized by 2x the Assay spec half-width. v3: assay_pct's deviation term is now Temperature/Pressure/Flow-weighted (60/20/20) plus Filter DP/Shaker/Humidity, matching kpi_prediction_agent.py's assay_relevant_dev exactly - not the flat stability_frac term used through v2. Still a proxy pending real CQA lab data (Quality Workbench Tier 3)"
     },
     "oee_availability_pct": {
       "provenance": "derived_proxy",
@@ -103,7 +104,7 @@
     "total_energy_kwh": {
       "provenance": "derived",
       "has_temporal_signal": false,
-      "note": "uses FINAL batch_duration_minutes AND real process_stability_pct (instability penalty) - not valid as a mid-batch prediction target without reformulation"
+      "note": "uses FINAL batch_duration_minutes AND real process_stability_pct (instability penalty). v3: instability_penalty now also includes Filter DP/Humidity/Compressed Air deviation terms, matching the 8-parameter live definition - not just the 3-parameter stability term used through v2. Not valid as a mid-batch prediction target without reformulation"
     },
     "sec_kwh_per_kg": {
       "provenance": "derived",

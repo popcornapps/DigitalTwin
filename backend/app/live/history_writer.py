@@ -13,11 +13,15 @@ reads.
 
 Final KPIs (yield/quality/SEC/OEE/energy) are computed the SAME real,
 deterministic way scripts/generate-batch-kpis/generate_batch_kpis.py computed
-them for the 120 historical batches - real Stability from the batch's own
-complete telemetry, flowing through the same Yield/Energy/Assay/OEE formula
-chain - not the KPI Prediction Agent's ML guess (that model is weak, test R²
-only ~0.23-0.4, and was previously used as if its guess were the real
-outcome). The ML model's own last-tick prediction is still captured
+them for the 120 historical batches (v3: the 8-parameter definition - core
+Temperature/Pressure/Flow stability plus Agitator RPM/Filter DP/Shaker
+Vibration/Inlet Humidity/Compressed Air deviation terms, matching
+generate_synthetic_kpi_data.py's compute_final_kpis and this same KPI's live
+explanation on the KPI Prediction page) - real Stability/deviation from the
+batch's own complete telemetry, flowing through the same Yield/Energy/Assay/
+OEE formula chain - not the KPI Prediction Agent's ML guess (that model is
+weak, test R² only ~0.23-0.4, and was previously used as if its guess were
+the real outcome). The ML model's own last-tick prediction is still captured
 separately, into predicted_* columns, purely for comparison against the real
 value - it no longer drives what gets recorded. The constants/functions below
 are ported from generate_batch_kpis.py, kept in sync by hand (same "ported,
@@ -78,6 +82,33 @@ ASSAY_STABILITY_COEFF = 2.0
 ASSAY_NOISE_STD = 0.3
 OEE_PERFORMANCE_RANGES = {'Normal': (90.0, 98.0), 'Warning': (82.0, 92.0), 'Critical': (75.0, 88.0)}
 
+# --- Secondary-parameter coefficients - copied exactly from
+# scripts/generate-batch-kpis/generate_batch_kpis.py (itself copied from
+# generate_synthetic_kpi_data.py's compute_final_kpis), kept in sync by hand,
+# same convention as everything else "ported from generate_batch_kpis.py"
+# above. Brings a live batch's final Yield/Quality/Energy in line with the
+# same 8-parameter definition the ML model is trained on and the KPI
+# Prediction page explains a live forecast with - previously this module
+# used only the 3-parameter (Temperature/Pressure/Flow) version. -->
+TEMP_ASSAY_COEFF = 0.6
+PRESSURE_ASSAY_COEFF = 0.2
+FLOW_ASSAY_COEFF = 0.2
+AGITATOR_YIELD_COEFF = 0.15
+FILTER_DP_YIELD_COEFF = 0.03
+SHAKER_YIELD_COEFF = 0.02
+FILTER_DP_ASSAY_COEFF = 0.03
+SHAKER_ASSAY_COEFF = 0.02
+HUMIDITY_ASSAY_COEFF = 0.02
+FILTER_DP_ENERGY_COEFF = 0.06
+HUMIDITY_ENERGY_COEFF = 0.04
+COMPRESSED_AIR_ENERGY_COEFF = 0.02
+
+FORMULA_PARAMETER_KEYS = (
+    'temperature', 'process_pressure', 'flow_rate', 'agitator_rpm',
+    'filter_differential_pressure', 'shaker_vibration_frequency',
+    'inlet_air_humidity', 'compressed_air_pressure',
+)
+
 
 def seeded_unit_interval(seed: str) -> float:
     digest = hashlib.sha256(seed.encode()).digest()
@@ -130,6 +161,28 @@ def compute_similarity(window: pd.DataFrame, golden_window: pd.DataFrame, parame
         mean_abs_diff = float((merged[param] - merged[f'{param}_golden']).abs().mean())
         similarities[param] = 100.0 * (1.0 - min(1.0, mean_abs_diff / band))
     return similarities
+
+
+def compute_deviation_scores(window: pd.DataFrame, golden_window: pd.DataFrame, parameter_limits: dict) -> dict:
+    """Ported from scripts/generate-batch-kpis/generate_batch_kpis.py - see
+    that copy's docstring for why this is mean-only (abs(mean residual) /
+    half-width, clipped to 1.0), not app.live.kpi_prediction_agent.py's live
+    formula (which adds a 0.4x-residual-std term meant for a rolling
+    30-minute window) - verified against real data that the std term does
+    not generalize to a full ~140-minute batch window for Shaker Vibration/
+    Compressed Air's periodic per-batch-phase-offset noise."""
+    merged = window.merge(golden_window, on='elapsed_minutes', suffixes=('', '_golden'))
+    scores = {}
+    for param in FORMULA_PARAMETER_KEYS:
+        lower, upper = parameter_limits[param]
+        half_width = (upper - lower) / 2
+        if merged.empty or half_width <= 0:
+            scores[param] = 0.0
+            continue
+        residual = merged[param] - merged[f'{param}_golden']
+        deviation_score = abs(residual.mean()) / half_width
+        scores[param] = min(1.0, float(deviation_score))
+    return scores
 
 
 def find_fault_onset(window: pd.DataFrame, parameter_limits: dict) -> float | None:
@@ -243,6 +296,14 @@ async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> b
             'process_pressure': r.process_pressure,
             'flow_rate': r.flow_rate,
             'agitator_rpm': r.agitator_rpm,
+            # The 4 secondary readings compute_deviation_scores needs below -
+            # already present on every TelemetryReading (same live pipeline
+            # kpi_prediction_agent.py reads these from), just not previously
+            # extracted here since only the 3-parameter formula needed them.
+            'filter_differential_pressure': r.filter_differential_pressure,
+            'shaker_vibration_frequency': r.shaker_vibration_frequency,
+            'inlet_air_humidity': r.inlet_air_humidity,
+            'compressed_air_pressure': r.compressed_air_pressure,
         }
         for r in history
     ])
@@ -268,6 +329,7 @@ async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> b
     golden_batch_similarity_pct = sum(similarity.values()) / len(similarity)
 
     fault_onset = find_fault_onset(window, parameter_limits)
+    dev = compute_deviation_scores(window, golden_window, parameter_limits)
 
     history_batch_id = _next_par_id(app_state)
     is_daily_permanent = _is_first_completion_today(app_state, batch.plant)
@@ -275,21 +337,38 @@ async def persist_completed_batch(batch: RunningBatch, app_state: AppState) -> b
     theoretical_output_kg = float(app_state.batches_df.loc['PAR-GOLDEN', 'theoretical_output_kg'])
     assay_target, assay_upper = _assay_spec()
 
-    yield_loss_frac = YIELD_LOSS_COEFF * (1 - stability_frac)
+    yield_loss_frac = (
+        YIELD_LOSS_COEFF * (1 - stability_frac)
+        + AGITATOR_YIELD_COEFF * dev['agitator_rpm']
+        + FILTER_DP_YIELD_COEFF * dev['filter_differential_pressure']
+        + SHAKER_YIELD_COEFF * dev['shaker_vibration_frequency']
+    )
     yield_fraction = _clamp(YIELD_FRACTION_FLOOR, 1.0, (
         1.0 - yield_loss_frac + seeded_gaussian(f'{history_batch_id}_yield_fraction', 0, YIELD_LOSS_NOISE_STD)
     ))
     actual_output_kg = theoretical_output_kg * yield_fraction
     yield_pct = 100.0 * yield_fraction
 
-    instability_penalty = ENERGY_INSTABILITY_COEFF * (1 - stability_frac)
+    instability_penalty = (
+        ENERGY_INSTABILITY_COEFF * (1 - stability_frac)
+        + FILTER_DP_ENERGY_COEFF * dev['filter_differential_pressure']
+        + HUMIDITY_ENERGY_COEFF * dev['inlet_air_humidity']
+        + COMPRESSED_AIR_ENERGY_COEFF * dev['compressed_air_pressure']
+    )
     energy_kwh = (
         BASE_ENERGY_KWH + ENERGY_PER_MINUTE_KWH * duration * (1 + instability_penalty)
         + seeded_gaussian(f'{history_batch_id}_energy', 0, ENERGY_NOISE_STD_KWH)
     )
     sec_kwh_per_kg = energy_kwh / actual_output_kg
 
-    assay_deviation = ASSAY_STABILITY_COEFF * (1 - stability_frac) * (assay_upper - assay_target)
+    assay_relevant_dev = (
+        TEMP_ASSAY_COEFF * dev['temperature'] + PRESSURE_ASSAY_COEFF * dev['process_pressure']
+        + FLOW_ASSAY_COEFF * dev['flow_rate']
+        + FILTER_DP_ASSAY_COEFF * dev['filter_differential_pressure']
+        + SHAKER_ASSAY_COEFF * dev['shaker_vibration_frequency']
+        + HUMIDITY_ASSAY_COEFF * dev['inlet_air_humidity']
+    )
+    assay_deviation = ASSAY_STABILITY_COEFF * assay_relevant_dev * (assay_upper - assay_target)
     assay_pct = _clamp(ASSAY_FLOOR_PCT, ASSAY_CEILING_PCT, (
         assay_target - assay_deviation + seeded_gaussian(f'{history_batch_id}_assay', 0, ASSAY_NOISE_STD)
     ))
