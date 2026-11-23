@@ -4,11 +4,15 @@
 # works with no cross-origin/proxy configuration needed in production.
 
 # ---------- Frontend build ----------
-# Pinned to the build machine's own platform (not the final target) - the
-# output is just static JS/CSS/HTML, so it's platform-independent, and
-# running esbuild under QEMU emulation for a cross-platform build is flaky
-# (crashes with "The service was stopped").
-FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-build
+# Note: previously pinned to `--platform=$BUILDPLATFORM` to avoid flaky
+# QEMU-emulated esbuild runs on local cross-platform builds (Apple Silicon
+# building for linux/amd64). Removed because ACR Tasks' pre-build dependency
+# scanner can't parse a `--platform=` flag in a FROM line and fails the whole
+# run with "unable to understand line ..." before the real build even
+# starts. ACR's cloud build agents are native linux/amd64 already, so this
+# doesn't reintroduce the QEMU issue there - only a risk for local
+# `docker buildx build --platform linux/amd64` cross-builds on arm64 hosts.
+FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
