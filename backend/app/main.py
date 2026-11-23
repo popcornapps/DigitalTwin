@@ -10,6 +10,10 @@ from fastapi import Depends, FastAPI
 # timing logs (app.copilot.llm_agent) are INFO level, so they'd silently
 # never show up without this.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+
+from app.logging_filters import SuppressHighFrequencyAccessLogs
+
+logging.getLogger('uvicorn.access').addFilter(SuppressHighFrequencyAccessLogs())
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
